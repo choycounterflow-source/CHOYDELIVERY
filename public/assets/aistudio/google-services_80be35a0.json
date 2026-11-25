@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "784702846165",
+    "project_id": "project-471df00a-bbd1-4a02-8e6",
+    "storage_bucket": "project-471df00a-bbd1-4a02-8e6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:784702846165:android:d5fa8d0dd5c5f18360de5c",
+        "android_client_info": {
+          "package_name": "com.aistudio.choyfood.kxvmpz"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "784702846165-4nf5hj7th66cchqb7je7dn88m7nqdtvq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.choyfood.kxvmpz",
+            "certificate_hash": "26d569e6d387583a2984208294fb2153b45c06e3"
+          }
+        },
+        {
+          "client_id": "784702846165-01cnecrig9rb9hsk5hcer4ahep2c2kcj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDLBxZwBdypmSrmwa3LlEhaxEsxO8AFgfI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "784702846165-01cnecrig9rb9hsk5hcer4ahep2c2kcj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

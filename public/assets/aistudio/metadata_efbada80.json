@@ -1,0 +1,6 @@
+{
+  "name": "ChoyFood",
+  "description": "Multi-role food delivery platform with Admin, Customer, Store, and Rider dashboards, private KYC verification, Choy Wallet, Choy Pro, and Ask Choy AI powered by Firebase.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

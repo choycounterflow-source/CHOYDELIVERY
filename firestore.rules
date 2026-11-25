@@ -1,0 +1,520 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // GLOBAL HARDENED PRIMITIVES
+    // =========================================================================
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    // Zero-DB-read bootstrap admin check (safe for list rules and single-doc ops)
+    function isBootstrapAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'choyjiez07@gmail.com';
+    }
+
+    // Full admin check for single-document operations (never used inside allow list)
+    function isAdmin() {
+      return isBootstrapAdmin() || (
+        isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isRiderRole() {
+      return isVerifiedUser()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getUserRole() == 'rider';
+    }
+
+    function isStoreRole() {
+      return isVerifiedUser()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && getUserRole() == 'store';
+    }
+
+    // =========================================================================
+    // VALIDATION BLUEPRINTS (ANTI-UPDATE-GAP)
+    // =========================================================================
+
+    function isValidAdminRecord(data, adminId) {
+      return data.keys().hasAll(['uid', 'email', 'grantedBy', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'grantedBy', 'createdAt'])
+        && data.uid == adminId
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 120
+        && data.grantedBy is string && data.grantedBy.size() >= 1 && data.grantedBy.size() <= 128
+        && data.createdAt is timestamp;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'role', 'walletBalance', 'choyProActive',
+          'kycStatus', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'role', 'walletBalance', 'choyProActive',
+          'kycStatus', 'riderCode', 'storeName', 'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && data.role in ['customer', 'rider', 'store', 'admin']
+        && data.walletBalance is number && data.walletBalance >= 0 && data.walletBalance <= 1000000
+        && data.choyProActive is bool
+        && data.kycStatus in ['unverified', 'pending', 'verified', 'rejected']
+        && (!('riderCode' in data) || (data.riderCode is string && data.riderCode.size() <= 20))
+        && (!('storeName' in data) || (data.storeName is string && data.storeName.size() <= 80))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidKycRecord(data, userId) {
+      return data.keys().hasAll([
+          'uid', 'displayName', 'realLegalName', 'phoneNumber', 'otpVerified',
+          'idType', 'idReference', 'profilePhotoName', 'validIdPhotoName',
+          'privacyConsentAccepted', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'displayName', 'realLegalName', 'phoneNumber', 'otpVerified',
+          'idType', 'idReference', 'profilePhotoName', 'validIdPhotoName',
+          'privacyConsentAccepted', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.uid == userId
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && data.realLegalName is string && data.realLegalName.size() >= 2 && data.realLegalName.size() <= 120
+        && data.phoneNumber is string && data.phoneNumber.size() >= 7 && data.phoneNumber.size() <= 25
+        && data.otpVerified is bool
+        && data.idType in ['Drivers License', 'UMID', 'Passport', 'PhilID']
+        && data.idReference is string && data.idReference.size() >= 3 && data.idReference.size() <= 80
+        && data.profilePhotoName is string && data.profilePhotoName.size() >= 1 && data.profilePhotoName.size() <= 120
+        && data.validIdPhotoName is string && data.validIdPhotoName.size() >= 1 && data.validIdPhotoName.size() <= 120
+        && data.privacyConsentAccepted == true
+        && data.status in ['pending', 'verified', 'rejected']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidDish(data) {
+      return data.keys().hasAll([
+          'name', 'description', 'price', 'saleGroup', 'storeName',
+          'storeOwnerId', 'imageUrl', 'likes', 'available', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'name', 'description', 'price', 'saleGroup', 'storeName',
+          'storeOwnerId', 'imageUrl', 'likes', 'available', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 100
+        && data.description is string && data.description.size() <= 300
+        && data.price is number && data.price >= 1 && data.price <= 50000
+        && data.saleGroup in ['Combo Meal', 'Solo', 'Extra', 'Promo', 'Good for Family']
+        && data.storeName is string && data.storeName.size() >= 2 && data.storeName.size() <= 80
+        && isValidId(data.storeOwnerId)
+        && data.imageUrl is string && data.imageUrl.size() >= 1 && data.imageUrl.size() <= 500
+        && data.likes is int && data.likes >= 0 && data.likes <= 10000000
+        && data.available is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'orderNumber', 'customerId', 'customerDisplayName', 'storeName', 'storeOwnerId',
+          'riderId', 'riderCode', 'items', 'subtotal', 'distanceTier', 'deliveryFee',
+          'discount', 'totalAmount', 'paymentMethod', 'deliveryAddress', 'deliveryNote',
+          'step', 'status', 'proofOfDeliveryNote', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'orderNumber', 'customerId', 'customerDisplayName', 'storeName', 'storeOwnerId',
+          'riderId', 'riderCode', 'items', 'subtotal', 'distanceTier', 'deliveryFee',
+          'discount', 'totalAmount', 'paymentMethod', 'deliveryAddress', 'deliveryNote',
+          'step', 'status', 'proofOfDeliveryNote', 'createdAt', 'updatedAt'
+        ])
+        && data.orderNumber is string && data.orderNumber.size() >= 4 && data.orderNumber.size() <= 24
+        && data.orderNumber.matches('^CF-[0-9A-Z]+$')
+        && isValidId(data.customerId)
+        && data.customerDisplayName is string && data.customerDisplayName.size() >= 1 && data.customerDisplayName.size() <= 60
+        && data.storeName is string && data.storeName.size() >= 1 && data.storeName.size() <= 80
+        && isValidId(data.storeOwnerId)
+        && data.riderId is string && data.riderId.size() <= 128
+        && data.riderCode is string && data.riderCode.size() <= 20
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 25
+        && data.items[0] is map
+        && data.subtotal is number && data.subtotal >= 1 && data.subtotal <= 200000
+        && data.distanceTier in ['0-2km', '2-5km', '5-10km']
+        && data.deliveryFee is number && data.deliveryFee >= 0 && data.deliveryFee <= 500
+        && data.discount is number && data.discount >= 0 && data.discount <= 5000
+        && data.totalAmount is number && data.totalAmount >= 0 && data.totalAmount <= 205000
+        && data.paymentMethod in ['COD', 'GCash', 'Card', 'ChoyWallet']
+        && data.deliveryAddress is string && data.deliveryAddress.size() >= 3 && data.deliveryAddress.size() <= 240
+        && data.deliveryNote is string && data.deliveryNote.size() <= 200
+        && data.step is int && data.step >= 1 && data.step <= 7
+        && data.status in [
+          'picked', 'admin_checked', 'store_accepted', 'rider_accepted',
+          'food_ready', 'picked_up', 'delivered', 'cancelled'
+        ]
+        && data.proofOfDeliveryNote is string && data.proofOfDeliveryNote.size() <= 200
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSupportTicket(data) {
+      return data.keys().hasAll([
+          'uid', 'fullName', 'contact', 'category', 'message',
+          'referenceCode', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'uid', 'fullName', 'contact', 'category', 'message',
+          'referenceCode', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.uid)
+        && data.fullName is string && data.fullName.size() >= 2 && data.fullName.size() <= 100
+        && data.contact is string && data.contact.size() >= 3 && data.contact.size() <= 120
+        && data.category is string && data.category.size() >= 2 && data.category.size() <= 80
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 1000
+        && data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 24
+        && data.referenceCode.matches('^CF-[0-9A-Z]+$')
+        && data.status in ['open', 'resolved']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['message', 'category', 'actorId', 'createdAt'])
+        && data.keys().hasOnly(['message', 'category', 'actorId', 'createdAt'])
+        && data.message is string && data.message.size() >= 3 && data.message.size() <= 240
+        && data.category in ['order', 'kyc', 'store', 'rider', 'system']
+        && isValidId(data.actorId)
+        && data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // 1. ADMINS REGISTRY
+    // =========================================================================
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && isAdmin();
+      allow list: if isBootstrapAdmin();
+      allow create: if isValidId(adminId)
+        && isValidAdminRecord(incoming(), adminId)
+        && incoming().createdAt == request.time
+        && isAdmin();
+      allow update: if false;
+      allow delete: if isValidId(adminId) && isBootstrapAdmin();
+    }
+
+    // =========================================================================
+    // 2. PUBLIC-SAFE USER PROFILES (NO PII)
+    // =========================================================================
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrapAdmin();
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (incoming().role == 'customer' && incoming().kycStatus == 'unverified' && incoming().walletBalance == 150 && incoming().choyProActive == false)
+          || isBootstrapAdmin()
+        );
+
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+          )
+          || (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['choyProActive', 'walletBalance', 'updatedAt'])
+            && incoming().choyProActive == true
+            && existing().choyProActive == false
+            && incoming().walletBalance <= existing().walletBalance
+          )
+          || (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['walletBalance', 'updatedAt'])
+            && incoming().walletBalance < existing().walletBalance
+          )
+          || (
+            isOwner(userId)
+            && incoming().diff(existing()).affectedKeys().hasOnly(['kycStatus', 'updatedAt'])
+            && incoming().kycStatus == 'pending'
+            && existing().kycStatus in ['unverified', 'rejected']
+            && existsAfter(/databases/$(database)/documents/kyc_vault/$(userId))
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 3. SUPER ADMIN KYC VAULT (STRICT PII ISOLATION)
+    // =========================================================================
+    match /kyc_vault/{userId} {
+      // Strictly owner or Super Admin. Stores & Riders are 100% blocked.
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrapAdmin();
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isValidKycRecord(incoming(), userId)
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidKycRecord(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Super Admin approves/rejects KYC
+          (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+          // Owner may re-submit if previously rejected
+          || (
+            isOwner(userId)
+            && existing().status == 'rejected'
+            && incoming().status == 'pending'
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'realLegalName', 'phoneNumber', 'otpVerified',
+              'idType', 'idReference', 'profilePhotoName', 'validIdPhotoName',
+              'privacyConsentAccepted', 'status', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 4. PARTNER STORE DISH CATALOG (PUBLIC MENU, NO PII)
+    // =========================================================================
+    match /dishes/{dishId} {
+      allow get: if isValidId(dishId);
+      allow list: if resource.data.available == true
+        || isBootstrapAdmin()
+        || (isVerifiedUser() && resource.data.storeOwnerId == request.auth.uid);
+
+      allow create: if isValidId(dishId)
+        && isVerifiedUser()
+        && isValidDish(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (isStoreRole() && incoming().storeOwnerId == request.auth.uid)
+        );
+
+      allow update: if isValidId(dishId)
+        && isVerifiedUser()
+        && isValidDish(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().storeOwnerId == existing().storeOwnerId
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          // Store owner updates own menu item
+          || (
+            isStoreRole()
+            && existing().storeOwnerId == request.auth.uid
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'description', 'price', 'saleGroup', 'imageUrl', 'available', 'updatedAt'
+            ])
+          )
+          // Any verified user can favorite (+1 like only)
+          || (
+            incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'updatedAt'])
+            && incoming().likes == existing().likes + 1
+          )
+        );
+
+      allow delete: if isValidId(dishId)
+        && isVerifiedUser()
+        && (isAdmin() || (isStoreRole() && existing().storeOwnerId == request.auth.uid));
+    }
+
+    // =========================================================================
+    // 5. 7-STEP LIVE DELIVERY ORDERS
+    // =========================================================================
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId)
+        && isVerifiedUser()
+        && (
+          existing().customerId == request.auth.uid
+          || existing().riderId == request.auth.uid
+          || existing().storeOwnerId == request.auth.uid
+          || (existing().riderId == '' && isRiderRole())
+          || isAdmin()
+        );
+
+      // Secure list query enforcing resource.data boundaries (zero get/exists calls)
+      allow list: if isVerifiedUser()
+        && (
+          isBootstrapAdmin()
+          || resource.data.customerId == request.auth.uid
+          || resource.data.riderId == request.auth.uid
+          || resource.data.storeOwnerId == request.auth.uid
+        );
+
+      allow create: if isValidId(orderId)
+        && isVerifiedUser()
+        && isValidOrder(incoming())
+        && incoming().customerId == request.auth.uid
+        && incoming().riderId == ''
+        && incoming().riderCode == ''
+        && incoming().step == 1
+        && incoming().status == 'picked'
+        && incoming().proofOfDeliveryNote == ''
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(orderId)
+        && isVerifiedUser()
+        && isValidOrder(incoming())
+        && incoming().orderNumber == existing().orderNumber
+        && incoming().customerId == existing().customerId
+        && incoming().storeOwnerId == existing().storeOwnerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Super Admin override (including terminal corrections)
+          isAdmin()
+          // Non-admin updates strictly blocked once terminal state reached
+          || (
+            !(existing().status in ['delivered', 'cancelled'])
+            && (
+              // Action: Customer cancels before cooking starts
+              (
+                existing().customerId == request.auth.uid
+                && existing().step <= 2
+                && incoming().status == 'cancelled'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+              )
+              // Action: Store accepts kitchen ticket (Step 3) or marks Food Ready (Step 5)
+              || (
+                isStoreRole()
+                && existing().storeOwnerId == request.auth.uid
+                && incoming().diff(existing()).affectedKeys().hasOnly(['step', 'status', 'updatedAt'])
+                && (
+                  (incoming().step == 3 && incoming().status == 'store_accepted')
+                  || (incoming().step == 5 && incoming().status == 'food_ready')
+                )
+              )
+              // Action: Rider accepts unassigned order (Step 4)
+              || (
+                isRiderRole()
+                && existing().riderId == ''
+                && incoming().riderId == request.auth.uid
+                && incoming().step == 4
+                && incoming().status == 'rider_accepted'
+                && incoming().diff(existing()).affectedKeys().hasOnly(['riderId', 'riderCode', 'step', 'status', 'updatedAt'])
+              )
+              // Action: Assigned Rider picks up food (Step 6) or delivers with proof (Step 7)
+              || (
+                isRiderRole()
+                && existing().riderId == request.auth.uid
+                && (
+                  (
+                    incoming().step == 6
+                    && incoming().status == 'picked_up'
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['step', 'status', 'updatedAt'])
+                  )
+                  || (
+                    incoming().step == 7
+                    && incoming().status == 'delivered'
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['step', 'status', 'proofOfDeliveryNote', 'updatedAt'])
+                  )
+                )
+              )
+            )
+          )
+        );
+
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 6. SUPPORT TICKETS (CONTACT US)
+    // =========================================================================
+    match /support_tickets/{ticketId} {
+      allow get: if isValidId(ticketId) && isVerifiedUser() && (existing().uid == request.auth.uid || isAdmin());
+      allow list: if isVerifiedUser() && (resource.data.uid == request.auth.uid || isBootstrapAdmin());
+
+      allow create: if isValidId(ticketId)
+        && isVerifiedUser()
+        && isValidSupportTicket(incoming())
+        && incoming().uid == request.auth.uid
+        && incoming().status == 'open'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isValidId(ticketId)
+        && isVerifiedUser()
+        && isValidSupportTicket(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+
+      allow delete: if isValidId(ticketId) && isAdmin();
+    }
+
+    // =========================================================================
+    // 7. SUPER ADMIN SYSTEM ACTIVITY LOGS
+    // =========================================================================
+    match /activity_logs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isBootstrapAdmin();
+
+      allow create: if isValidId(logId)
+        && isVerifiedUser()
+        && isValidActivityLog(incoming())
+        && incoming().actorId == request.auth.uid
+        && incoming().createdAt == request.time;
+
+      allow update: if false;
+      allow delete: if isValidId(logId) && isAdmin();
+    }
+  }
+}

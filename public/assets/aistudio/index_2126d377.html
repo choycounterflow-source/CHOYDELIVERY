@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ChoyFood — Local Food Delivery & Multi-Role Platform</title>
+  <meta name="description" content="ChoyFood is a Filipino local food delivery platform connecting food lovers, partner stores, and reliable riders with fast delivery, Choy Wallet, and Super Admin command center.">
+  <meta name="keywords" content="food delivery, cebu food, filipino food, online food order, choy food, delivery rider">
+  <meta name="author" content="ChoyFood">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              vermilion: '#D12D11',
+              vermilionDark: '#A61F09',
+              vermilionLight: '#FFDAD3',
+              mango: '#E08E00',
+              mangoLight: '#FFB703',
+              calamansi: '#1F7A4C',
+              calamansiLight: '#C8F3D9',
+              cream: '#FFFBF7',
+              charcoal: '#1C1917'
+            },
+            admin: {
+              bg: '#0B1120',
+              surface: '#111827',
+              card: '#1E293B',
+              border: '#334155'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    @keyframes marquee {
+      0% { transform: translateX(100%); }
+      100% { transform: translateX(-100%); }
+    }
+    .animate-marquee {
+      display: inline-block;
+      white-space: nowrap;
+      animation: marquee 22s linear infinite;
+    }
+    .scrollbar-none::-webkit-scrollbar { display: none; }
+    .scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-brand-cream text-brand-charcoal min-h-screen flex flex-col font-sans antialiased selection:bg-brand-vermilion selection:text-white">
+
+  <!-- TOP HEADER & NAVIGATION -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-orange-100 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & App Name -->
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="navigateTo('landing')">
+        <div class="w-10 h-10 rounded-full bg-gradient-to-tr from-brand-vermilion to-brand-mango flex items-center justify-center text-white shadow-md">
+          <i data-lucide="utensils-crossed" class="w-5 h-5"></i>
+        </div>
+        <div>
+          <span class="text-xl font-black tracking-tight text-brand-vermilion">Choy<span class="text-brand-mango">Food</span></span>
+          <span class="hidden sm:inline-block text-xs bg-red-100 text-brand-vermilion px-2 py-0.5 rounded-full ml-2 font-semibold">Web Mobile App</span>
+        </div>
+      </div>
+
+      <!-- Center Nav Links (Public SEO Pages) -->
+      <nav class="hidden md:flex items-center space-x-6 text-sm font-medium text-stone-600">
+        <button onclick="navigateTo('landing')" class="hover:text-brand-vermilion transition">Home</button>
+        <button onclick="navigateTo('blog')" class="hover:text-brand-vermilion transition">Community Blog</button>
+        <button onclick="navigateTo('about')" class="hover:text-brand-vermilion transition">About Us</button>
+        <button onclick="navigateTo('contact')" class="hover:text-brand-vermilion transition">Contact Us</button>
+        <button onclick="navigateTo('privacy')" class="hover:text-brand-vermilion transition">Privacy & Terms</button>
+      </nav>
+
+      <!-- Role Selector & Auth Actions -->
+      <div class="flex items-center space-x-2">
+        <!-- Role Switcher Dropdown -->
+        <div class="relative">
+          <select id="roleSelector" onchange="switchAppRole(this.value)" class="text-xs font-semibold bg-stone-100 border border-stone-200 text-stone-700 py-1.5 px-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+            <option value="landing">🌐 Public Landing</option>
+            <option value="customer" selected>🛒 Customer View</option>
+            <option value="rider">🛵 Rider Portal</option>
+            <option value="store">🍳 Store Board</option>
+            <option value="admin">⚡ Super Admin</option>
+          </select>
+        </div>
+
+        <!-- Customer Cart Button -->
+        <button id="cartHeaderBtn" onclick="toggleCartDrawer()" class="relative p-2 text-stone-700 hover:text-brand-vermilion bg-stone-50 rounded-lg border border-stone-200">
+          <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+          <span id="cartCountBadge" class="absolute -top-1.5 -right-1.5 bg-brand-vermilion text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center">0</span>
+        </button>
+
+        <!-- Register / KYC Trigger -->
+        <button onclick="openKycModal()" class="hidden sm:inline-flex items-center space-x-1.5 bg-brand-vermilion hover:bg-brand-vermilionDark text-white text-xs font-bold py-2 px-3.5 rounded-lg shadow-sm transition">
+          <i data-lucide="user-check" class="w-4 h-4"></i>
+          <span>Verify KYC</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- MOVING PROMO MARQUEE BANNER -->
+  <div class="bg-gradient-to-r from-brand-vermilion via-brand-mango to-brand-vermilion text-white text-xs font-bold py-1.5 overflow-hidden shadow-inner">
+    <div class="animate-marquee flex space-x-12 items-center">
+      <span>🔥 CHOYFOOD FEAST: Use code <span class="underline">CHOY25</span> for ₱25 OFF orders over ₱250!</span>
+      <span>⭐ SUBSCRIBE TO CHOY PRO: Enjoy 1-Month FREE Delivery on all partner stores!</span>
+      <span>🛵 RIDER HIRING: Join the ChoyFood Rider Partner fleet with daily instant payouts!</span>
+      <span>🛡️ PRIVACY FIRST: Customer Valid IDs and legal names strictly locked in encrypted Admin Vault!</span>
+    </div>
+  </div>
+
+  <!-- MAIN DYNAMIC CONTENT CONTAINER -->
+  <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- 1. PUBLIC LANDING PAGE (SEO FRIENDLY) -->
+    <section id="view-landing" class="view-panel space-y-12 hidden">
+      <!-- Hero Banner -->
+      <div class="relative rounded-3xl overflow-hidden bg-gradient-to-r from-red-950 via-stone-900 to-amber-950 text-white p-8 sm:p-14 shadow-xl">
+        <div class="relative z-10 max-w-2xl space-y-5">
+          <span class="inline-flex items-center space-x-2 bg-brand-vermilion/30 border border-brand-vermilion/50 px-3.5 py-1 rounded-full text-xs font-bold text-orange-200">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-brand-mangoLight"></i>
+            <span>Authentic Neighborhood Food Delivery</span>
+          </span>
+          <h1 class="text-3xl sm:text-5xl font-extrabold tracking-tight leading-tight">
+            Craving Fresh Local Eats Delivered Fast?
+          </h1>
+          <p class="text-stone-300 text-sm sm:text-base leading-relaxed">
+            From savory Lechon Kawali and hot Sinigang to sweet Halo-Halo and freshly brewed Boba. Order from certified local stores with live tracking and Choy Wallet savings.
+          </p>
+          <div class="flex flex-wrap gap-3 pt-2">
+            <button onclick="switchAppRole('customer')" class="bg-brand-vermilion hover:bg-brand-vermilionDark text-white font-bold px-6 py-3 rounded-xl shadow-lg flex items-center space-x-2 transition">
+              <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+              <span>Order Food Now</span>
+            </button>
+            <button onclick="navigateTo('blog')" class="bg-white/10 hover:bg-white/20 text-white font-semibold px-5 py-3 rounded-xl backdrop-blur-sm border border-white/20 transition">
+              <span>Read Local Food Stories</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Feature Highlights -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm text-center space-y-2">
+          <div class="w-12 h-12 mx-auto rounded-xl bg-orange-100 text-brand-vermilion flex items-center justify-center">
+            <i data-lucide="shield-check" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-bold text-stone-800">Super Admin KYC Vault</h3>
+          <p class="text-xs text-stone-500">Valid IDs and real names are kept private in an admin-only encrypted vault.</p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm text-center space-y-2">
+          <div class="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-brand-mango flex items-center justify-center">
+            <i data-lucide="wallet" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-bold text-stone-800">Choy Wallet & Pro</h3>
+          <p class="text-xs text-stone-500">Non-withdrawable food credit and 1-Month free delivery subscriptions.</p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm text-center space-y-2">
+          <div class="w-12 h-12 mx-auto rounded-xl bg-emerald-100 text-brand-calamansi flex items-center justify-center">
+            <i data-lucide="timer" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-bold text-stone-800">60-Sec Rider Acceptance</h3>
+          <p class="text-xs text-stone-500">Riders receive fast dispatched batches with transparent distance compensation.</p>
+        </div>
+        <div class="bg-white p-6 rounded-2xl border border-stone-200 shadow-sm text-center space-y-2">
+          <div class="w-12 h-12 mx-auto rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+            <i data-lucide="bot" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-bold text-stone-800">Ask Choy AI Assistant</h3>
+          <p class="text-xs text-stone-500">Smart meal suggestions and guidance powered by modern conversational AI.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. COMMUNITY BLOG (SEO FRIENDLY WITH SEMANTIC ARTICLES) -->
+    <section id="view-blog" class="view-panel space-y-8 hidden">
+      <div class="border-b border-stone-200 pb-5">
+        <h2 class="text-3xl font-extrabold text-stone-900">ChoyFood Community Blog & Local Food Scene</h2>
+        <p class="text-sm text-stone-600 mt-1">Tips on food delivery, culinary features, kitchen safety, and rider community stories.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="blogPostsContainer">
+        <!-- Dynamic Blog articles loaded via JS -->
+      </div>
+    </section>
+
+    <!-- 3. ABOUT US PAGE -->
+    <section id="view-about" class="view-panel space-y-6 hidden">
+      <div class="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm max-w-4xl mx-auto space-y-6">
+        <h2 class="text-3xl font-extrabold text-brand-vermilion">About ChoyFood</h2>
+        <p class="text-sm text-stone-700 leading-relaxed">
+          ChoyFood was created to build a fair, hyper-local food delivery ecosystem. We connect independent neighborhood kitchens, street food specialists, and beloved family restaurants directly with customers, supported by our fleet of verified delivery riders.
+        </p>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4">
+          <div class="bg-stone-50 p-4 rounded-xl border border-stone-200">
+            <h4 class="font-bold text-stone-900 text-sm">Empowering Local Stores</h4>
+            <p class="text-xs text-stone-500 mt-1">No predatory commission models; we help home cooks and karinderyas thrive.</p>
+          </div>
+          <div class="bg-stone-50 p-4 rounded-xl border border-stone-200">
+            <h4 class="font-bold text-stone-900 text-sm">Dignified Rider Earnings</h4>
+            <p class="text-xs text-stone-500 mt-1">Transparent distance-based payouts, tipping, and insurance coverage.</p>
+          </div>
+          <div class="bg-stone-50 p-4 rounded-xl border border-stone-200">
+            <h4 class="font-bold text-stone-900 text-sm">Consumer Fraud Protection</h4>
+            <p class="text-xs text-stone-500 mt-1">KYC encryption guarantees that IDs are never sold or shared with 3rd parties.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4. CONTACT US PAGE -->
+    <section id="view-contact" class="view-panel space-y-6 hidden">
+      <div class="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm max-w-2xl mx-auto space-y-5">
+        <h2 class="text-2xl font-bold text-stone-900">Get in Touch with ChoyFood Support</h2>
+        <p class="text-xs text-stone-500">Need help with an order, store registration, or rider remittance? Send us a ticket.</p>
+        <form onsubmit="event.preventDefault(); alert('Message sent to ChoyFood Support! Reference ID: CF-' + Math.floor(1000 + Math.random() * 9000));" class="space-y-4">
+          <div>
+            <label class="block text-xs font-bold text-stone-700 mb-1">Your Full Name</label>
+            <input type="text" required placeholder="e.g. Maria Santos" class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-stone-700 mb-1">Email / Phone</label>
+            <input type="text" required placeholder="choyjiez07@gmail.com" class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-stone-700 mb-1">Inquiry Category</label>
+            <select class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+              <option>Customer Order & Refund Concern</option>
+              <option>Rider Application & Remittance</option>
+              <option>Partner Store Permit Approval</option>
+              <option>Choy Pro Subscription Inquiry</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-stone-700 mb-1">Message Details</label>
+            <textarea rows="4" required placeholder="Describe your concern in detail..." class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion"></textarea>
+          </div>
+          <button type="submit" class="w-full bg-brand-vermilion hover:bg-brand-vermilionDark text-white font-bold py-3 rounded-xl text-xs shadow-md transition">
+            Submit Support Ticket
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 5. PRIVACY POLICY & TERMS -->
+    <section id="view-privacy" class="view-panel space-y-6 hidden">
+      <article class="bg-white p-8 rounded-3xl border border-stone-200 shadow-sm max-w-4xl mx-auto space-y-5 text-stone-700 text-xs sm:text-sm leading-relaxed">
+        <h2 class="text-2xl font-black text-brand-vermilion">Privacy Policy & Terms of Service</h2>
+        <p class="text-xs text-stone-400">Last Revised: November 2026</p>
+        
+        <h3 class="text-base font-bold text-stone-900 pt-2">1. Fraud-Prevention & Private Customer KYC Storage</h3>
+        <p>
+          By uploading your government-issued valid ID and selfie photograph, you consent to ChoyFood storing this data in an isolated, encrypted Super Admin vault for fraud-prevention, bogus buyer deterrence, and platform security only. <strong>This information is never shown publicly, nor is it accessible to partner restaurants, delivery riders, or non-admin personnel.</strong>
+        </p>
+
+        <h3 class="text-base font-bold text-stone-900 pt-2">2. Separation of Public Display Name and Legal Identity</h3>
+        <p>
+          Customers interact using their chosen public Display Name / Username. The customer's real legal name is encrypted and only retrievable during formal order fraud investigations conducted by verified Super Admins.
+        </p>
+
+        <h3 class="text-base font-bold text-stone-900 pt-2">3. Choy Wallet Policy</h3>
+        <p>
+          Choy Wallet credit balances are strictly non-withdrawable and intended solely for food and beverage purchases across registered partner stores.
+        </p>
+      </article>
+    </section>
+
+    <!-- 6. CUSTOMER DASHBOARD (MAIN FOOD SAVER APP) -->
+    <section id="view-customer" class="view-panel space-y-6">
+      
+      <!-- Photo Showcase Carousel -->
+      <div class="relative rounded-2xl overflow-hidden shadow-md bg-stone-900 h-44 sm:h-64 flex items-center justify-center text-white">
+        <div id="carouselSlide" class="w-full h-full bg-cover bg-center flex flex-col justify-end p-6 bg-gradient-to-t from-black/80 via-black/30 to-transparent">
+          <span class="bg-brand-vermilion text-white text-[10px] font-bold px-2 py-0.5 rounded w-max mb-1">PROMO SPOTLIGHT</span>
+          <h2 id="carouselTitle" class="text-xl sm:text-2xl font-bold">Fiesta Combo Platters</h2>
+          <p id="carouselCaption" class="text-xs sm:text-sm text-stone-200">Save up to ₱50 with Choy Pro 1-Month Free Delivery</p>
+        </div>
+      </div>
+
+      <!-- Sale Group Categories Filter -->
+      <div class="flex items-center space-x-2 overflow-x-auto pb-2 scrollbar-none">
+        <button onclick="filterSaleGroup('All')" class="group-btn active bg-brand-vermilion text-white text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap shadow-sm">All Dishes</button>
+        <button onclick="filterSaleGroup('Combo Meal')" class="group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap">Combo Meal</button>
+        <button onclick="filterSaleGroup('Solo')" class="group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap">Solo</button>
+        <button onclick="filterSaleGroup('Extra')" class="group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap">Extra</button>
+        <button onclick="filterSaleGroup('Promo')" class="group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap">Promo</button>
+        <button onclick="filterSaleGroup('Good for Family')" class="group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap">Good for Family</button>
+      </div>
+
+      <!-- Food Menu Grid (Easy to see medium-sized cards) -->
+      <div>
+        <div class="flex justify-between items-center mb-3">
+          <h3 class="text-lg font-bold text-stone-900">Available Dishes & Specialties</h3>
+          <span class="text-xs text-stone-500">Fast delivery from partner kitchens</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" id="customerFoodGrid">
+          <!-- Food Cards populated by JS -->
+        </div>
+      </div>
+
+      <!-- Live Order Tracker Banner (If Order Active) -->
+      <div id="activeOrderTracker" class="bg-white border-2 border-brand-vermilion rounded-2xl p-5 shadow-sm space-y-3">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-bold text-brand-vermilion uppercase tracking-wider flex items-center space-x-1.5">
+            <span class="w-2.5 h-2.5 rounded-full bg-brand-vermilion animate-pulse"></span>
+            <span>Live 7-Step Order Status</span>
+          </span>
+          <span id="orderTrackerStepText" class="text-xs font-bold bg-orange-100 text-brand-vermilion px-2.5 py-1 rounded-full">Step 1: Customer Picked</span>
+        </div>
+        
+        <!-- Progress Steps -->
+        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-stone-400">
+          <div class="p-1 rounded bg-brand-vermilion text-white font-bold" title="Step 1: Picked">1. Pick</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-2" title="Step 2: Admin Checked">2. Check</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-3" title="Step 3: Store Accepted">3. Cook</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-4" title="Step 4: Rider Accepted">4. Rider</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-5" title="Step 5: Food Ready">5. Ready</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-6" title="Step 6: Rider Picked Up">6. Way</div>
+          <div class="p-1 rounded bg-stone-100" id="stepIndicator-7" title="Step 7: Delivered">7. Done</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 7. RIDER DASHBOARD -->
+    <section id="view-rider" class="view-panel space-y-6 hidden">
+      <!-- Rider Header & Status -->
+      <div class="bg-gradient-to-r from-emerald-800 to-teal-900 text-white p-6 rounded-3xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs uppercase tracking-wider text-emerald-200 font-bold">Rider Partner Portal</span>
+          <h2 class="text-2xl font-black mt-1">Hello, Rider <span id="riderDisplayCode" class="text-amber-300">JC389</span></h2>
+          <p class="text-xs text-emerald-100 mt-1">Vehicle: Mountain Bike / Motorcycle • Status: Active on Duty</p>
+        </div>
+        <div class="flex items-center space-x-3 bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20">
+          <div>
+            <div class="text-[10px] text-emerald-200">Remittance Balance</div>
+            <div class="text-lg font-bold text-white">₱120.00 Due</div>
+          </div>
+          <div class="border-l border-white/20 pl-3">
+            <div class="text-[10px] text-emerald-200">Today's Earnings</div>
+            <div class="text-lg font-bold text-amber-300">₱480.00</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Incoming Orders with 60-Sec Countdown -->
+      <div class="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center space-x-2">
+            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-ping"></span>
+            <h3 class="font-bold text-stone-900">Incoming Delivery Orders</h3>
+          </div>
+          <span id="countdownTimerBadge" class="bg-red-100 text-brand-vermilion font-mono text-xs font-bold px-3 py-1 rounded-full">
+            ⏱️ 60s Window
+          </span>
+        </div>
+
+        <div id="incomingOrderCard" class="bg-stone-50 border border-stone-200 rounded-2xl p-5 space-y-3">
+          <div class="flex justify-between items-start">
+            <div>
+              <span class="text-xs font-bold text-stone-800">Order #CF-8492</span>
+              <p class="text-xs text-stone-500">Store: Nanay's Sizzling & BBQ • 1.8 km distance</p>
+            </div>
+            <span class="text-sm font-extrabold text-brand-calamansi">₱45.00 Payout</span>
+          </div>
+          <p class="text-xs text-stone-600 bg-white p-2.5 rounded-lg border border-stone-200">
+            📍 Drop-off: Unit 402, Acacia Heights, Banilad • Note: "Leave at guardhouse lobby"
+          </p>
+          <div class="flex gap-2 pt-1">
+            <button onclick="riderAcceptOrder()" class="flex-1 bg-brand-calamansi hover:bg-emerald-800 text-white font-bold py-2.5 rounded-xl text-xs transition">
+              Accept Order (60s)
+            </button>
+            <button onclick="riderRejectOrder()" class="px-4 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold py-2.5 rounded-xl text-xs transition">
+              Pass
+            </button>
+          </div>
+        </div>
+
+        <!-- Simulated Map Canvas -->
+        <div class="bg-stone-800 rounded-2xl p-4 text-white space-y-2">
+          <div class="flex justify-between items-center text-xs">
+            <span class="font-bold text-emerald-400 flex items-center space-x-1.5">
+              <i data-lucide="map-pin" class="w-4 h-4"></i>
+              <span>Live Delivery Route Simulation</span>
+            </span>
+            <span class="text-stone-400">GPS Active</span>
+          </div>
+          <div class="h-32 bg-stone-900 rounded-xl relative overflow-hidden flex items-center justify-center border border-stone-700">
+            <div class="text-xs text-stone-400 text-center">
+              <i data-lucide="navigation" class="w-8 h-8 text-emerald-400 mx-auto mb-1 animate-bounce"></i>
+              <span>En route to customer • ETA 12 mins</span>
+            </div>
+          </div>
+          <div class="flex justify-between items-center pt-2">
+            <label class="cursor-pointer bg-white/10 hover:bg-white/20 text-xs px-3 py-1.5 rounded-lg border border-white/20 transition flex items-center space-x-1.5">
+              <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+              <span>Take Proof of Delivery Photo</span>
+              <input type="file" accept="image/*" class="hidden" onchange="alert('Proof of Delivery photo captured & verified!')">
+            </label>
+            <button onclick="advanceOrderStatus(7)" class="bg-brand-calamansi hover:bg-emerald-800 text-white font-bold text-xs px-4 py-2 rounded-lg transition">
+              Mark as Delivered
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 8. STORE DASHBOARD -->
+    <section id="view-store" class="view-panel space-y-6 hidden">
+      <div class="bg-gradient-to-r from-amber-700 to-orange-800 text-white p-6 rounded-3xl shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <span class="text-xs uppercase tracking-wider text-amber-200 font-bold">Partner Store Kitchen</span>
+          <h2 class="text-2xl font-black mt-1">Nanay's Sizzling & BBQ</h2>
+          <p class="text-xs text-amber-100 mt-1">Status: Open & Receiving Kitchen Tickets</p>
+        </div>
+        <button onclick="openAddMenuModal()" class="bg-white text-orange-900 hover:bg-orange-50 font-bold text-xs px-4 py-2.5 rounded-xl shadow transition flex items-center space-x-1.5">
+          <i data-lucide="plus" class="w-4 h-4"></i>
+          <span>Add Menu Item</span>
+        </button>
+      </div>
+
+      <!-- Live Kitchen Orders -->
+      <div class="bg-white p-6 rounded-3xl border border-stone-200 shadow-sm space-y-4">
+        <h3 class="font-bold text-stone-900 flex items-center space-x-2">
+          <i data-lucide="flame" class="w-5 h-5 text-orange-500"></i>
+          <span>Active Kitchen Queue</span>
+        </h3>
+        <div class="space-y-3" id="storeOrdersContainer">
+          <div class="p-4 bg-stone-50 rounded-2xl border border-stone-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+            <div>
+              <span class="font-bold text-sm text-stone-800">Order #CF-8492</span>
+              <p class="text-xs text-stone-500">1x Crispy Sisig Fiesta Combo (Extra Rice, Egg) • ₱240.00</p>
+            </div>
+            <div class="flex gap-2">
+              <button onclick="advanceOrderStatus(3)" class="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
+                Accept Ticket
+              </button>
+              <button onclick="advanceOrderStatus(5)" class="bg-brand-calamansi hover:bg-emerald-800 text-white text-xs font-bold px-3 py-2 rounded-lg transition">
+                Food is Ready!
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 9. ADMIN DASHBOARD (DARK COMMAND CENTER) -->
+    <section id="view-admin" class="view-panel space-y-8 hidden bg-admin-bg -mx-4 sm:-mx-6 lg:-mx-8 p-6 sm:p-10 rounded-3xl text-stone-100 shadow-2xl border border-admin-border">
+      
+      <!-- Admin Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-admin-border pb-6">
+        <div>
+          <span class="text-xs uppercase tracking-widest text-emerald-400 font-bold flex items-center space-x-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+            <span>ChoyFood Super Admin Command Center</span>
+          </span>
+          <h2 class="text-3xl font-black text-white mt-1">Platform Control & Analytics</h2>
+        </div>
+        <div class="flex items-center space-x-3">
+          <span class="text-xs bg-admin-card text-stone-300 px-3 py-1.5 rounded-xl border border-admin-border">
+            Admin: <strong class="text-white">choyjiez07@gmail.com</strong>
+          </span>
+          <button onclick="runSystemCleaner()" class="bg-brand-vermilion hover:bg-brand-vermilionDark text-white text-xs font-bold px-4 py-2 rounded-xl shadow-lg flex items-center space-x-2 transition">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>Run System Cleaner</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- SECTION 1: APP OVERVIEW ANALYTICS -->
+      <div class="space-y-4">
+        <h3 class="text-sm font-bold text-stone-400 uppercase tracking-wider">App Overview Analytics</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <!-- Total Earnings Card -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center text-stone-400 text-xs">
+              <span>Lifetime Revenue</span>
+              <i data-lucide="dollar-sign" class="w-4 h-4 text-emerald-400"></i>
+            </div>
+            <div class="text-2xl font-black text-white">₱148,920.00</div>
+            <div class="text-[10px] text-stone-400 flex justify-between pt-1 border-t border-admin-border">
+              <span>COD: 62%</span>
+              <span>GCash: 28%</span>
+              <span>Wallet: 10%</span>
+            </div>
+          </div>
+
+          <!-- Successful Buys Card -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center text-stone-400 text-xs">
+              <span>Successful Buys</span>
+              <i data-lucide="check-check" class="w-4 h-4 text-brand-mango"></i>
+            </div>
+            <div class="text-2xl font-black text-white">1,492 Orders</div>
+            <div class="text-[10px] text-emerald-400 pt-1 border-t border-admin-border">
+              99.2% Completion Rate
+            </div>
+          </div>
+
+          <!-- Visitor Counter -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center text-stone-400 text-xs">
+              <span>Visitor Counter</span>
+              <i data-lucide="users" class="w-4 h-4 text-blue-400"></i>
+            </div>
+            <div class="text-2xl font-black text-white" id="liveVisitorCount">1,348 Visits</div>
+            <div class="text-[10px] text-stone-400 pt-1 border-t border-admin-border">
+              Daily Live Active Traffic
+            </div>
+          </div>
+
+          <!-- Total Likes -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center text-stone-400 text-xs">
+              <span>Total Likes</span>
+              <i data-lucide="heart" class="w-4 h-4 text-rose-400"></i>
+            </div>
+            <div class="text-2xl font-black text-white">4,812 Likes</div>
+            <div class="text-[10px] text-rose-300 pt-1 border-t border-admin-border">
+              Dishes & Restaurant Favorites
+            </div>
+          </div>
+        </div>
+
+        <!-- Activity & Error Logs Row -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+          <!-- Scrolling Activity Log -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-stone-300 uppercase">System Activity Log</span>
+              <span class="text-[10px] text-stone-500">Live stream</span>
+            </div>
+            <div class="space-y-2 max-h-48 overflow-y-auto scrollbar-none pr-1" id="adminActivityLogList">
+              <div class="text-xs bg-admin-surface p-2.5 rounded-xl border border-admin-border flex justify-between items-center">
+                <span>Rider <strong>JC389</strong> delivered order #CF-8490</span>
+                <button onclick="this.parentElement.remove()" class="text-stone-500 hover:text-red-400 text-[10px]"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+              </div>
+              <div class="text-xs bg-admin-surface p-2.5 rounded-xl border border-admin-border flex justify-between items-center">
+                <span>User <strong>Maria Santos</strong> uploaded KYC Valid ID</span>
+                <button onclick="this.parentElement.remove()" class="text-stone-500 hover:text-red-400 text-[10px]"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+              </div>
+              <div class="text-xs bg-admin-surface p-2.5 rounded-xl border border-admin-border flex justify-between items-center">
+                <span>Store <strong>Nanay's BBQ</strong> submitted new combo menu</span>
+                <button onclick="this.parentElement.remove()" class="text-stone-500 hover:text-red-400 text-[10px]"><i data-lucide="x" class="w-3.5 h-3.5"></i></button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Error Log Monitor Badge -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-3">
+            <div class="flex justify-between items-center">
+              <span class="text-xs font-bold text-rose-400 uppercase flex items-center space-x-1.5">
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>
+                <span>Backend Error Log Monitor</span>
+              </span>
+              <span class="text-[10px] bg-rose-950 text-rose-300 px-2 py-0.5 rounded-full font-bold">0 Critical Errors</span>
+            </div>
+            <div class="text-xs bg-admin-surface p-3.5 rounded-xl border border-admin-border text-stone-400 space-y-2">
+              <p class="text-emerald-400 flex items-center space-x-1.5">
+                <i data-lucide="check-circle-2" class="w-4 h-4"></i>
+                <span>All API gateways, Webhook listeners & Firestore queries operational.</span>
+              </p>
+              <p class="text-[10px] text-stone-500">Stripe/GCash webhook listener: 100% healthy • SMS OTP gateway latency: 280ms</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECTION 2: SYSTEM & BACKEND MANAGEMENT TOOLS -->
+      <div class="space-y-4 pt-4 border-t border-admin-border">
+        <h3 class="text-sm font-bold text-stone-400 uppercase tracking-wider">System & Backend Management Tools</h3>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <!-- Database Status -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-stone-400">Firestore Database</span>
+              <span class="flex items-center space-x-1 text-emerald-400 text-xs font-bold">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span>Live (32ms)</span>
+              </span>
+            </div>
+            <div class="text-sm font-bold text-white">Database ID: ai-studio-choyfood</div>
+            <p class="text-[10px] text-stone-500">Security rules zero-trust enforced with private KYC vault access.</p>
+          </div>
+
+          <!-- Backend Server Monitor -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-stone-400">Backend Server & AI</span>
+              <span class="text-xs font-bold text-emerald-400">Operational</span>
+            </div>
+            <div class="text-sm font-bold text-white">AI Logic (gemini-3.8-flash)</div>
+            <p class="text-[10px] text-stone-500">Server memory: 48% • CPU load: 12% • Container Healthy</p>
+          </div>
+
+          <!-- Private Storage Monitor -->
+          <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-2">
+            <div class="flex justify-between items-center">
+              <span class="text-xs text-stone-400">Private Storage Bucket</span>
+              <span class="text-xs font-bold text-amber-400">0.42 GB / 5.0 GB</span>
+            </div>
+            <div class="w-full bg-admin-surface h-2 rounded-full overflow-hidden">
+              <div class="bg-brand-mango h-full rounded-full" style="width: 8.4%"></div>
+            </div>
+            <p class="text-[10px] text-stone-500">Private KYC Valid IDs, selfie records, and store food images.</p>
+          </div>
+        </div>
+
+        <!-- Super Admin KYC Vault Inspection Table -->
+        <div class="bg-admin-card p-5 rounded-2xl border border-admin-border space-y-3 mt-4">
+          <div class="flex justify-between items-center">
+            <h4 class="text-xs font-bold text-stone-200 uppercase tracking-wider flex items-center space-x-1.5">
+              <i data-lucide="lock" class="w-4 h-4 text-amber-400"></i>
+              <span>Super Admin KYC Vault (Strictly Admin Access Only)</span>
+            </h4>
+            <span class="text-[10px] bg-amber-950 text-amber-300 px-2 py-0.5 rounded font-bold">2 Records Pending Verification</span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs text-stone-300">
+              <thead class="bg-admin-surface text-stone-400 uppercase text-[10px]">
+                <tr>
+                  <th class="p-3">Public Name</th>
+                  <th class="p-3">Real Legal Name (Encrypted)</th>
+                  <th class="p-3">Cellphone</th>
+                  <th class="p-3">Valid ID Preview</th>
+                  <th class="p-3">Action</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-admin-border">
+                <tr>
+                  <td class="p-3 font-semibold text-white">FoodieMaria</td>
+                  <td class="p-3 text-amber-200">Maria Clara Santos</td>
+                  <td class="p-3">+63 917 123 4567 (OTP Verified)</td>
+                  <td class="p-3">
+                    <span class="inline-flex items-center space-x-1 bg-stone-800 text-stone-300 px-2 py-1 rounded text-[10px] cursor-pointer hover:bg-stone-700" onclick="alert('Viewing securely encrypted Valid ID: Driver License #N01-12-98421\nStatus: AUTHENTIC')">
+                      <i data-lucide="eye" class="w-3 h-3 text-amber-400"></i>
+                      <span>Inspect ID</span>
+                    </span>
+                  </td>
+                  <td class="p-3">
+                    <button onclick="this.innerText='Verified'; this.className='bg-emerald-800 text-white text-[10px] px-2.5 py-1 rounded font-bold'" class="bg-brand-calamansi hover:bg-emerald-800 text-white text-[10px] px-2.5 py-1 rounded font-bold transition">
+                      Approve KYC
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- CUSTOMER REGISTRATION & KYC MODAL (MANDATORY FRAUD PRIVACY CHECKBOX) -->
+  <div id="kycModal" class="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-stone-200 pb-3">
+        <div>
+          <h3 class="text-xl font-bold text-stone-900">Customer Registration & KYC</h3>
+          <p class="text-xs text-stone-500">Separates your public display nickname from secure legal ID.</p>
+        </div>
+        <button onclick="closeKycModal()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-6 h-6"></i></button>
+      </div>
+
+      <form onsubmit="handleKycSubmit(event)" class="space-y-4">
+        <!-- Display Name (Public) -->
+        <div>
+          <label class="block text-xs font-bold text-stone-700 mb-1">Display Name / Username (Shown Publicly)</label>
+          <input type="text" id="regDisplayName" required placeholder="What you want to be called in the app" class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+        </div>
+
+        <!-- Real Legal Name (Encrypted Admin Only) -->
+        <div>
+          <label class="block text-xs font-bold text-stone-700 mb-1">Real Full Legal Name (Admin Encrypted Vault Only)</label>
+          <input type="text" id="regRealName" required placeholder="Your legal name as shown on Valid ID" class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+        </div>
+
+        <!-- Phone & OTP Placeholder -->
+        <div>
+          <label class="block text-xs font-bold text-stone-700 mb-1">Cellphone Number (with OTP Placeholder)</label>
+          <div class="flex space-x-2">
+            <input type="tel" id="regPhone" required placeholder="+63 9XX XXX XXXX" class="flex-1 text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+            <button type="button" onclick="sendOtpSim()" id="otpBtn" class="bg-stone-200 hover:bg-stone-300 text-stone-800 text-xs font-bold px-3 py-2 rounded-xl transition">
+              Send OTP
+            </button>
+          </div>
+          <div id="otpInputRow" class="hidden mt-2 flex space-x-2">
+            <input type="text" id="otpCode" placeholder="Enter 6-digit OTP code" class="flex-1 text-xs p-2.5 rounded-xl border border-stone-200 bg-stone-50">
+            <button type="button" onclick="verifyOtpSim()" class="bg-brand-calamansi text-white text-xs font-bold px-3 py-2 rounded-xl">Verify</button>
+          </div>
+        </div>
+
+        <!-- Profile Picture Upload -->
+        <div>
+          <label class="block text-xs font-bold text-stone-700 mb-1">Real Profile Picture Upload</label>
+          <input type="file" id="regProfilePic" accept="image/*" class="w-full text-xs p-2.5 rounded-xl border border-stone-200 bg-stone-50">
+        </div>
+
+        <!-- Valid ID Upload -->
+        <div>
+          <label class="block text-xs font-bold text-stone-700 mb-1">Valid ID Upload (Driver's License / UMID / Passport / PhilID)</label>
+          <input type="file" id="regValidId" accept="image/*" class="w-full text-xs p-2.5 rounded-xl border border-stone-200 bg-stone-50">
+        </div>
+
+        <!-- MANDATORY PRIVACY CHECKBOX -->
+        <div class="bg-amber-50 p-4 rounded-2xl border border-amber-200 space-y-2">
+          <label class="flex items-start space-x-3 cursor-pointer">
+            <input type="checkbox" id="regPrivacyCheckbox" onchange="toggleRegisterButton()" class="mt-0.5 rounded text-brand-vermilion focus:ring-brand-vermilion h-4 w-4">
+            <span class="text-xs text-amber-900 leading-snug">
+              "By uploading your valid ID and profile picture, you consent to ChoyFood storing this data securely for fraud-prevention purposes only. This information will never be shared publicly or shown to restaurants and riders."
+            </span>
+          </label>
+        </div>
+
+        <!-- REGISTER BUTTON (Strictly disabled until checkbox ticked) -->
+        <button type="submit" id="regSubmitBtn" disabled class="w-full bg-stone-300 cursor-not-allowed text-stone-500 font-bold py-3.5 rounded-xl text-xs shadow transition">
+          Complete Registration (Disabled until Privacy is Ticked)
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- CART & FOOD SAVER DRAWER -->
+  <div id="cartDrawer" class="fixed inset-y-0 right-0 z-50 w-full sm:w-96 bg-white shadow-2xl p-6 flex flex-col justify-between transform translate-x-full transition-transform duration-300">
+    <div class="space-y-4 flex-grow overflow-y-auto">
+      <div class="flex justify-between items-center border-b border-stone-200 pb-3">
+        <h3 class="font-black text-lg text-stone-900 flex items-center space-x-2">
+          <i data-lucide="shopping-cart" class="w-5 h-5 text-brand-vermilion"></i>
+          <span>Food Saver Cart</span>
+        </h3>
+        <button onclick="toggleCartDrawer()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Cart Items List -->
+      <div id="cartItemsList" class="space-y-3">
+        <!-- Populated via JS -->
+      </div>
+
+      <!-- Distance Tier & Secret Fee Engine -->
+      <div class="bg-stone-50 p-3.5 rounded-2xl border border-stone-200 space-y-2 text-xs">
+        <label class="font-bold text-stone-700">Delivery Distance Tier</label>
+        <select id="distanceTierSelect" onchange="updateCartTotals()" class="w-full p-2 rounded-lg border border-stone-200 bg-white">
+          <option value="0-2km">0 - 2 km (Near Delivery)</option>
+          <option value="2-5km">2 - 5 km (Standard Town Delivery)</option>
+          <option value="5-10km">5 - 10 km (Extended Distance)</option>
+        </select>
+        <label class="font-bold text-stone-700 block mt-2">Payment Method</label>
+        <select id="paymentMethodSelect" class="w-full p-2 rounded-lg border border-stone-200 bg-white">
+          <option value="COD">Cash on Delivery (COD)</option>
+          <option value="GCash">GCash E-Wallet</option>
+          <option value="Card">Debit / Credit Card</option>
+          <option value="ChoyWallet">Choy Wallet (₱150.00 Balance)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Cart Footer & Checkout -->
+    <div class="border-t border-stone-200 pt-4 space-y-3">
+      <div class="flex justify-between text-xs text-stone-500">
+        <span>Delivery Fee:</span>
+        <span id="cartDeliveryFee">₱25.00</span>
+      </div>
+      <div class="flex justify-between text-base font-extrabold text-stone-900">
+        <span>Total Pay:</span>
+        <span id="cartGrandTotal">₱0.00</span>
+      </div>
+      <button onclick="checkoutCartOrder()" class="w-full bg-brand-vermilion hover:bg-brand-vermilionDark text-white font-bold py-3.5 rounded-xl text-xs shadow-lg transition">
+        Confirm Food Order (Step 1)
+      </button>
+    </div>
+  </div>
+
+  <!-- FLOATING ASK CHOY AI BUTTON & DRAWER -->
+  <button onclick="toggleAskChoyDrawer()" class="fixed bottom-6 right-6 z-40 bg-gradient-to-r from-brand-vermilion to-brand-mango text-white p-3.5 rounded-full shadow-2xl flex items-center space-x-2 hover:scale-105 transition transform">
+    <i data-lucide="sparkles" class="w-5 h-5 text-amber-200"></i>
+    <span class="text-xs font-bold pr-1">Ask Choy AI</span>
+  </button>
+
+  <div id="askChoyDrawer" class="fixed inset-y-0 right-0 z-50 w-full sm:w-96 bg-white shadow-2xl p-6 flex flex-col justify-between transform translate-x-full transition-transform duration-300">
+    <div class="flex justify-between items-center border-b border-stone-200 pb-3">
+      <div class="flex items-center space-x-2">
+        <div class="w-8 h-8 rounded-full bg-brand-vermilion text-white flex items-center justify-center font-bold text-xs">AI</div>
+        <div>
+          <h4 class="font-bold text-sm text-stone-900">Ask Choy AI</h4>
+          <span class="text-[10px] text-emerald-600 font-bold">● Fast Assistant Online</span>
+        </div>
+      </div>
+      <button onclick="toggleAskChoyDrawer()" class="text-stone-400 hover:text-stone-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+    </div>
+
+    <div id="chatMessages" class="flex-grow overflow-y-auto py-4 space-y-3 text-xs">
+      <div class="bg-orange-50 text-stone-800 p-3 rounded-2xl border border-orange-100 max-w-[85%]">
+        Kumusta! I am <strong>Ask Choy AI</strong>. Ask me for food recommendations, Choy Pro 1-month free delivery, rider requirements, or store menus!
+      </div>
+    </div>
+
+    <div class="border-t border-stone-200 pt-3 flex space-x-2">
+      <input type="text" id="aiInput" placeholder="Ask about food, combos, or delivery..." onkeydown="if(event.key==='Enter') sendAiMessage()" class="flex-1 text-xs p-2.5 rounded-xl border border-stone-200 bg-stone-50 focus:outline-none focus:ring-2 focus:ring-brand-vermilion">
+      <button onclick="sendAiMessage()" class="bg-brand-vermilion text-white px-3.5 py-2.5 rounded-xl font-bold text-xs">
+        <i data-lucide="send" class="w-4 h-4"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="bg-stone-900 text-stone-400 text-xs py-8 border-t border-stone-800 mt-12">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
+      <div>
+        <span class="font-bold text-white text-sm">ChoyFood Local Platform</span>
+        <p class="text-stone-500 mt-0.5">Empowering neighborhood stores, riders, and hungry customers.</p>
+      </div>
+      <div class="flex space-x-4">
+        <button onclick="navigateTo('privacy')" class="hover:text-white transition">Privacy Policy</button>
+        <button onclick="navigateTo('contact')" class="hover:text-white transition">Contact</button>
+        <button onclick="navigateTo('about')" class="hover:text-white transition">About</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- SCRIPT LOGIC -->
+  <script>
+    // State Store
+    const appState = {
+      role: 'customer',
+      cart: [],
+      visitorCount: 1348,
+      kycVerified: false,
+      dishes: [
+        { id: 'd1', name: 'Lechon Kawali Fiesta Combo', price: 220, group: 'Combo Meal', store: "Nanay's BBQ", likes: 342, img: 'https://images.unsplash.com/photo-1544025162-d76694265947?w=600&auto=format&fit=crop&q=80' },
+        { id: 'd2', name: 'Sizzling Pork Sisig with Egg', price: 180, group: 'Solo', store: "Nanay's BBQ", likes: 512, img: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=600&auto=format&fit=crop&q=80' },
+        { id: 'd3', name: 'Family Crispy Pata Feast', price: 680, group: 'Good for Family', store: 'Cebu Grill Hub', likes: 289, img: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=600&auto=format&fit=crop&q=80' },
+        { id: 'd4', name: 'Halo-Halo Special Supreme', price: 120, group: 'Promo', store: 'Sweet Corner', likes: 620, img: 'https://images.unsplash.com/photo-1563805042-7684c019e1cb?w=600&auto=format&fit=crop&q=80' },
+        { id: 'd5', name: 'Garlic Rice & Fried Egg Duo', price: 45, group: 'Extra', store: "Nanay's BBQ", likes: 115, img: 'https://images.unsplash.com/photo-1512058564366-18510be2db19?w=600&auto=format&fit=crop&q=80' },
+        { id: 'd6', name: 'Bbq Pork Skewers (5 pcs)', price: 175, group: 'Solo', store: 'Cebu Grill Hub', likes: 430, img: 'https://images.unsplash.com/photo-1529193591184-b1d58069ecdd?w=600&auto=format&fit=crop&q=80' }
+      ],
+      blogPosts: [
+        { id: 'b1', title: 'Top 10 Must-Try Filipino Street Foods in 2026', readMinutes: 4, summary: 'Explore local grilled delights from Isaw and Betamax to savory Kwek-Kwek.', tag: 'Food Culture' },
+        { id: 'b2', title: 'How ChoyFood Empowers Neighborhood Karinderyas', readMinutes: 5, summary: 'Discover how digitizing home cooks brings authentic home flavors to your table.', tag: 'Community' },
+        { id: 'b3', title: 'A Day in the Life of a ChoyFood Delivery Rider', readMinutes: 6, summary: 'Behind the handlebars: rain or shine delivery stories from Metro Cebu riders.', tag: 'Rider Story' },
+        { id: 'b4', title: 'Food Safety and Hygiene: Our Strict Kitchen Checklist', readMinutes: 4, summary: 'How partner stores maintain Sanitary permits and safe packaging standards.', tag: 'Safety' },
+        { id: 'b5', title: 'Save More on Every Meal: Tips for Smart Ordering', readMinutes: 3, summary: 'Maximize combo meal savings, Choy Pro free delivery, and vouchers.', tag: 'Tips' },
+        { id: 'b6', title: 'Understanding Delivery Fees and Fair Compensation', readMinutes: 5, summary: 'Why transparent distance tiers ensure fair wages for hard-working riders.', tag: 'Industry' }
+      ]
+    };
+
+    // Initialize Lucide Icons
+    function refreshIcons() {
+      if (window.lucide) lucide.createIcons();
+    }
+
+    // Role Switching
+    function switchAppRole(role) {
+      appState.role = role;
+      document.getElementById('roleSelector').value = role;
+
+      document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+
+      const target = document.getElementById('view-' + role);
+      if (target) {
+        target.classList.remove('hidden');
+      } else {
+        document.getElementById('view-landing').classList.remove('hidden');
+      }
+      refreshIcons();
+    }
+
+    function navigateTo(page) {
+      document.querySelectorAll('.view-panel').forEach(el => el.classList.add('hidden'));
+      const target = document.getElementById('view-' + page);
+      if (target) {
+        target.classList.remove('hidden');
+      }
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      refreshIcons();
+    }
+
+    // Render Food Grid
+    function renderFoodGrid(filterGroup = 'All') {
+      const container = document.getElementById('customerFoodGrid');
+      const filtered = filterGroup === 'All' ? appState.dishes : appState.dishes.filter(d => d.group === filterGroup);
+      
+      container.innerHTML = filtered.map(dish => `
+        <div class="bg-white rounded-2xl overflow-hidden border border-stone-200 shadow-sm flex flex-col justify-between hover:shadow-md transition">
+          <div class="relative h-44 bg-stone-100 overflow-hidden">
+            <img src="${dish.img}" alt="${dish.name}" class="w-full h-full object-cover">
+            <span class="absolute top-2.5 left-2.5 bg-white/90 backdrop-blur-sm text-stone-800 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+              ${dish.group}
+            </span>
+            <button onclick="likeDish('${dish.id}')" class="absolute top-2.5 right-2.5 bg-white/90 backdrop-blur-sm p-1.5 rounded-full text-stone-400 hover:text-rose-500 shadow-sm">
+              <i data-lucide="heart" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="p-4 space-y-2 flex-grow flex flex-col justify-between">
+            <div>
+              <div class="text-[11px] text-stone-400 font-medium">${dish.store}</div>
+              <h4 class="font-bold text-stone-900 text-sm leading-snug">${dish.name}</h4>
+            </div>
+            <div class="flex items-center justify-between pt-2">
+              <div>
+                <span class="text-base font-black text-brand-vermilion">₱${dish.price.toFixed(2)}</span>
+                <span class="text-[10px] text-stone-400 block">${dish.likes} favorites</span>
+              </div>
+              <button onclick="addToCart('${dish.id}')" class="bg-brand-vermilion hover:bg-brand-vermilionDark text-white text-xs font-bold px-3.5 py-2 rounded-xl flex items-center space-x-1 shadow-sm transition">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>Add</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+      refreshIcons();
+    }
+
+    function filterSaleGroup(group) {
+      document.querySelectorAll('.group-btn').forEach(b => {
+        if (b.innerText.includes(group)) {
+          b.className = 'group-btn active bg-brand-vermilion text-white text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap shadow-sm';
+        } else {
+          b.className = 'group-btn bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 text-xs font-bold px-4 py-2 rounded-full whitespace-nowrap';
+        }
+      });
+      renderFoodGrid(group);
+    }
+
+    function likeDish(id) {
+      const dish = appState.dishes.find(d => d.id === id);
+      if (dish) {
+        dish.likes++;
+        renderFoodGrid();
+      }
+    }
+
+    // Render Blog Posts
+    function renderBlogPosts() {
+      const container = document.getElementById('blogPostsContainer');
+      container.innerHTML = appState.blogPosts.map(post => `
+        <article class="bg-white rounded-2xl p-6 border border-stone-200 shadow-sm space-y-3 flex flex-col justify-between hover:shadow-md transition">
+          <div class="space-y-2">
+            <span class="bg-orange-100 text-brand-vermilion text-[10px] font-bold px-2.5 py-0.5 rounded-full">${post.tag}</span>
+            <h3 class="font-bold text-base text-stone-900 leading-snug">${post.title}</h3>
+            <p class="text-xs text-stone-600 leading-relaxed">${post.summary}</p>
+          </div>
+          <div class="flex items-center justify-between text-xs text-stone-400 pt-3 border-t border-stone-100">
+            <span>⏱️ ${post.readMinutes} min read</span>
+            <button onclick="alert('Full article: ' + '${post.title}' + '\n\n' + '${post.summary}')" class="text-brand-vermilion font-bold hover:underline">Read Article →</button>
+          </div>
+        </article>
+      `).join('');
+      refreshIcons();
+    }
+
+    // Cart Operations
+    function addToCart(dishId) {
+      const dish = appState.dishes.find(d => d.id === dishId);
+      if (!dish) return;
+      const existing = appState.cart.find(item => item.dish.id === dishId);
+      if (existing) {
+        existing.qty++;
+      } else {
+        appState.cart.push({ dish, qty: 1 });
+      }
+      updateCartTotals();
+      toggleCartDrawer(true);
+    }
+
+    function toggleCartDrawer(forceOpen = null) {
+      const el = document.getElementById('cartDrawer');
+      if (forceOpen === true) el.classList.remove('translate-x-full');
+      else if (forceOpen === false) el.classList.add('translate-x-full');
+      else el.classList.toggle('translate-x-full');
+    }
+
+    function updateCartTotals() {
+      const count = appState.cart.reduce((sum, item) => sum + item.qty, 0);
+      document.getElementById('cartCountBadge').innerText = count;
+
+      const subtotal = appState.cart.reduce((sum, item) => sum + (item.dish.price * item.qty), 0);
+      const tier = document.getElementById('distanceTierSelect').value;
+      const deliveryFee = tier === '0-2km' ? 25 : tier === '2-5km' ? 35 : 50;
+      document.getElementById('cartDeliveryFee').innerText = '₱' + deliveryFee.toFixed(2);
+      document.getElementById('cartGrandTotal').innerText = '₱' + (subtotal + deliveryFee).toFixed(2);
+
+      const listEl = document.getElementById('cartItemsList');
+      if (appState.cart.length === 0) {
+        listEl.innerHTML = '<p class="text-xs text-stone-400 text-center py-6">Your cart is empty.</p>';
+      } else {
+        listEl.innerHTML = appState.cart.map(item => `
+          <div class="flex justify-between items-center text-xs p-2 bg-stone-50 rounded-xl border border-stone-100">
+            <div>
+              <div class="font-bold text-stone-800">${item.dish.name}</div>
+              <div class="text-[10px] text-stone-500">₱${item.dish.price} x ${item.qty}</div>
+            </div>
+            <div class="flex items-center space-x-2">
+              <button onclick="changeCartQty('${item.dish.id}', -1)" class="w-6 h-6 rounded bg-stone-200 text-stone-700 font-bold">-</button>
+              <span class="font-bold">${item.qty}</span>
+              <button onclick="changeCartQty('${item.dish.id}', 1)" class="w-6 h-6 rounded bg-stone-200 text-stone-700 font-bold">+</button>
+            </div>
+          </div>
+        `).join('');
+      }
+      refreshIcons();
+    }
+
+    function changeCartQty(id, delta) {
+      const item = appState.cart.find(i => i.dish.id === id);
+      if (item) {
+        item.qty += delta;
+        if (item.qty <= 0) {
+          appState.cart = appState.cart.filter(i => i.dish.id !== id);
+        }
+        updateCartTotals();
+      }
+    }
+
+    function checkoutCartOrder() {
+      if (appState.cart.length === 0) {
+        alert('Please add food items to your cart first.');
+        return;
+      }
+      alert('Order Placed Successfully! Order #CF-8492.\nStatus: Step 1 (Customer Picked)');
+      toggleCartDrawer(false);
+      appState.cart = [];
+      updateCartTotals();
+      advanceOrderStatus(1);
+    }
+
+    function advanceOrderStatus(step) {
+      const stepNames = {
+        1: 'Step 1: Customer Picked',
+        2: 'Step 2: Admin Checked',
+        3: 'Step 3: Store Accepted (Cooking)',
+        4: 'Step 4: Rider Accepted (60s)',
+        5: 'Step 5: Food is Ready',
+        6: 'Step 6: Rider Picked Up (On the way)',
+        7: 'Step 7: Order Delivered Successfully!'
+      };
+      document.getElementById('orderTrackerStepText').innerText = stepNames[step] || 'Processing';
+      for (let i = 2; i <= 7; i++) {
+        const el = document.getElementById('stepIndicator-' + i);
+        if (el) {
+          if (i <= step) {
+            el.className = 'p-1 rounded bg-brand-vermilion text-white font-bold';
+          } else {
+            el.className = 'p-1 rounded bg-stone-100';
+          }
+        }
+      }
+    }
+
+    // KYC Modal & Validation
+    function openKycModal() {
+      document.getElementById('kycModal').classList.remove('hidden');
+    }
+
+    function closeKycModal() {
+      document.getElementById('kycModal').classList.add('hidden');
+    }
+
+    function toggleRegisterButton() {
+      const checked = document.getElementById('regPrivacyCheckbox').checked;
+      const btn = document.getElementById('regSubmitBtn');
+      if (checked) {
+        btn.disabled = false;
+        btn.className = 'w-full bg-brand-vermilion hover:bg-brand-vermilionDark text-white font-bold py-3.5 rounded-xl text-xs shadow-md transition cursor-pointer';
+        btn.innerText = 'Register & Securely Submit KYC';
+      } else {
+        btn.disabled = true;
+        btn.className = 'w-full bg-stone-300 cursor-not-allowed text-stone-500 font-bold py-3.5 rounded-xl text-xs shadow transition';
+        btn.innerText = 'Complete Registration (Disabled until Privacy is Ticked)';
+      }
+    }
+
+    function sendOtpSim() {
+      const phone = document.getElementById('regPhone').value;
+      if (!phone) { alert('Please enter your cellphone number.'); return; }
+      document.getElementById('otpInputRow').classList.remove('hidden');
+      document.getElementById('otpCode').value = '482910';
+      alert('OTP code generated: 482910 (Placeholder simulated)');
+    }
+
+    function verifyOtpSim() {
+      alert('OTP Verified Successfully!');
+    }
+
+    function handleKycSubmit(e) {
+      e.preventDefault();
+      const displayName = document.getElementById('regDisplayName').value;
+      const realName = document.getElementById('regRealName').value;
+      alert(`Customer Registration Complete!\n\nPublic Display Name: ${displayName}\nLegal Name: ${realName} (Secured in Admin-Only Encrypted Vault)\n\nValid ID & Profile photo uploaded securely.`);
+      closeKycModal();
+    }
+
+    // Ask Choy AI
+    function toggleAskChoyDrawer() {
+      document.getElementById('askChoyDrawer').classList.toggle('translate-x-full');
+    }
+
+    function sendAiMessage() {
+      const input = document.getElementById('aiInput');
+      const text = input.value.trim();
+      if (!text) return;
+
+      const container = document.getElementById('chatMessages');
+      container.innerHTML += `
+        <div class="bg-stone-100 text-stone-900 p-3 rounded-2xl max-w-[85%] ml-auto font-medium">
+          ${text}
+        </div>
+      `;
+      input.value = '';
+
+      // AI Simulated Response
+      setTimeout(() => {
+        let reply = "I recommend trying the Lechon Kawali Fiesta Combo with Choy Pro 1-Month Free Delivery!";
+        const lower = text.toLowerCase();
+        if (lower.includes('rider') || lower.includes('apply')) {
+          reply = "Rider applicants must submit Barangay and Police clearances, driver's license, and vehicle OR/CR for Super Admin verification.";
+        } else if (lower.includes('pro') || lower.includes('free delivery')) {
+          reply = "Choy Pro provides 1-Month of unlimited free delivery for only ₱149/month on all partner food stores.";
+        } else if (lower.includes('fee') || lower.includes('formula') || lower.includes('secret')) {
+          reply = "Delivery fees are calculated transparently based on distance tiers (0-2km: ₱25, 2-5km: ₱35, 5-10km: ₱50).";
+        }
+        container.innerHTML += `
+          <div class="bg-orange-50 text-stone-800 p-3 rounded-2xl border border-orange-100 max-w-[85%]">
+            ${reply}
+          </div>
+        `;
+        container.scrollTop = container.scrollHeight;
+      }, 500);
+    }
+
+    // System Cleaner Tool (Admin)
+    function runSystemCleaner() {
+      alert("Running System Cleaner Cron Job...\n\n- Purged 42 abandoned guest carts\n- Cleaned expired cookies & session logs\n- Deleted backend error logs older than 30 days\n\nResult: 18.4 MB of server space reclaimed!");
+      const list = document.getElementById('adminActivityLogList');
+      if (list) {
+        list.innerHTML = '<div class="text-xs bg-admin-surface p-2.5 rounded-xl border border-admin-border text-emerald-400">System Cleaner cron job completed successfully.</div>';
+      }
+    }
+
+    // Init on DOM Load
+    window.addEventListener('DOMContentLoaded', () => {
+      renderFoodGrid();
+      renderBlogPosts();
+      updateCartTotals();
+      refreshIcons();
+    });
+  </script>
+</body>
+</html>
