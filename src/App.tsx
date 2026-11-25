@@ -21,7 +21,7 @@ const ROLE_TABS: { id: AppView; label: string }[] = [
 ];
 
 function ChoyFoodShell() {
-  const { authUser, profile, dishes, toasts, dismissToast, loginWithGoogle, logout, pushToast } =
+  const { authUser, profile, dishes, toasts, dismissToast, loginWithGoogle, logout, pushToast, loginAsDemoUser } =
     useChoyFood();
 
   const [view, setView] = useState<AppView>("customer");
@@ -194,12 +194,21 @@ function ChoyFoodShell() {
                 <LogOut className="w-3.5 h-3.5 text-stone-500" />
               </button>
             ) : (
-              <button
-                onClick={loginWithGoogle}
-                className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
-              >
-                Sign In
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={loginWithGoogle}
+                  className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                >
+                  Sign In
+                </button>
+                <button
+                  onClick={() => loginAsDemoUser("admin")}
+                  className="bg-stone-900 hover:bg-stone-800 text-amber-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                  title="Instant Demo Super Admin Access (Bypasses Firebase 2FA)"
+                >
+                  ⚡ Demo Admin
+                </button>
+              </div>
             )}
           </div>
         </div>
@@ -252,7 +261,35 @@ function ChoyFoodShell() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {isPublicPage && (
+        {view === "landing" && (
+          <PublicPages
+            view={view}
+            onNavigate={navigate}
+            onOpenKyc={() => setIsKycOpen(true)}
+          />
+        )}
+        {view === "blog" && (
+          <PublicPages
+            view={view}
+            onNavigate={navigate}
+            onOpenKyc={() => setIsKycOpen(true)}
+          />
+        )}
+        {view === "about" && (
+          <PublicPages
+            view={view}
+            onNavigate={navigate}
+            onOpenKyc={() => setIsKycOpen(true)}
+          />
+        )}
+        {view === "contact" && (
+          <PublicPages
+            view={view}
+            onNavigate={navigate}
+            onOpenKyc={() => setIsKycOpen(true)}
+          />
+        )}
+        {view === "privacy" && (
           <PublicPages
             view={view}
             onNavigate={navigate}

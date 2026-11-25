@@ -129,6 +129,7 @@ interface FirebaseContextValue {
   promos: PromoCode[];
   validatePromoCode: (code: string, subtotal: number) => Promise<{ valid: boolean; discount: number; message: string }>;
   updateRiderProfile: (input: { riderPhotoUrl?: string }) => Promise<void>;
+  loginAsDemoUser: (role: UserRole) => Promise<void>;
 }
 
 const FirebaseContext = createContext<FirebaseContextValue | null>(null);
@@ -1244,6 +1245,36 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [authUser, isAdmin, activityLogs, pushToast]);
 
+  const loginAsDemoUser = useCallback(async (role: UserRole) => {
+    const mockUid = `demo_${role}_${Date.now()}`;
+    const mockUser = {
+      uid: mockUid,
+      email: role === "admin" ? SUPER_ADMIN_EMAIL : `${role}@choyfood.ph`,
+      emailVerified: true,
+      displayName: role === "admin" ? "Super Admin Choy" : role === "rider" ? "Rider Partner JC389" : role === "store" ? "Nanay's Sizzling Owner" : "Cebu Foodie Customer",
+      isAnonymous: false,
+    } as unknown as User;
+
+    const mockProfile: UserProfile = {
+      uid: mockUid,
+      displayName: mockUser.displayName || "ChoyFood User",
+      role,
+      walletBalance: 2500,
+      choyProActive: true,
+      kycStatus: "verified",
+      riderCode: role === "rider" ? "JC389" : undefined,
+      storeName: role === "store" ? "Nanay's Sizzling & BBQ" : undefined,
+      referralCode: "CHOY-DEMO",
+      referralEarnings: 450,
+      referredCount: 8,
+      ratingScore: 4.95,
+    };
+
+    setAuthUser(mockUser);
+    setProfile(mockProfile);
+    pushToast("Instant Demo Access", `Successfully signed in as ${role.toUpperCase()} (Bypassed Firebase 2FA).`, "success");
+  }, [pushToast]);
+
   return (
     <FirebaseContext.Provider
       value={{
@@ -1286,6 +1317,7 @@ export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         promos,
         validatePromoCode,
         updateRiderProfile,
+        loginAsDemoUser,
       }}
     >
       {children}
