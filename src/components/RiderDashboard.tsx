@@ -103,7 +103,7 @@ export const RiderDashboard: React.FC = () => {
   const [nickname, setNickname] = useState(existingDocs?.nickname || profile?.nickname || "");
   const [address, setAddress] = useState(existingDocs?.address || "");
   const [phoneNumber, setPhoneNumber] = useState(
-    existingDocs?.contactNumber || myKycRecord?.phoneNumber || "09170000000"
+    existingDocs?.contactNumber || myKycRecord?.phoneNumber || ""
   );
   const [age, setAge] = useState(existingDocs?.age || "");
   const [sex, setSex] = useState<RiderOnboardingDocs["sex"]>(existingDocs?.sex || "Male");
@@ -161,8 +161,8 @@ export const RiderDashboard: React.FC = () => {
   const [appSubmitting, setAppSubmitting] = useState(false);
   const [appTicketRef, setAppTicketRef] = useState<string | null>(null);
 
-  const riderCode = profile?.riderCode || "JC389";
-  const riderScore = profile?.ratingScore ? Math.round(profile.ratingScore * 20) : 94;
+  const riderCode = profile?.riderCode || (authUser ? `RD${authUser.uid.slice(0, 4).toUpperCase()}` : "NEW");
+  const riderScore = profile?.ratingScore ? Math.round(profile.ratingScore * 20) : 100;
   const riderBatch = riderScore >= 85 ? "Batch A" : riderScore >= 75 ? "Batch B" : "Batch C";
   const batchReason =
     riderScore >= 85
@@ -174,11 +174,11 @@ export const RiderDashboard: React.FC = () => {
     riderScore >= 85 ? "bg-emerald-500 text-white" : riderScore >= 75 ? "bg-amber-500 text-white" : "bg-rose-500 text-white";
 
   // Compute Public Name format: First letter of name + First letter of last name + last 3 digits of uid / phone
-  const rawDisplayName = profile?.displayName || authUser?.displayName || "Juan Rider";
+  const rawDisplayName = profile?.displayName || authUser?.displayName || "Rider Partner";
   const nameParts = rawDisplayName.trim().split(/\s+/);
-  const firstInitial = nameParts[0]?.[0]?.toUpperCase() || "J";
-  const lastInitial = nameParts[nameParts.length - 1]?.[0]?.toUpperCase() || "R";
-  const tailDigits = authUser?.uid ? authUser.uid.replace(/\D/g, "").slice(-3) || "389" : "389";
+  const firstInitial = nameParts[0]?.[0]?.toUpperCase() || "R";
+  const lastInitial = nameParts[nameParts.length - 1]?.[0]?.toUpperCase() || "P";
+  const tailDigits = authUser?.uid ? authUser.uid.replace(/\D/g, "").slice(-3) || "000" : "000";
   const publicHandle = `${firstInitial}${lastInitial}${tailDigits}`;
 
   // Incoming unassigned orders (step 1..5, riderId empty)
@@ -199,10 +199,13 @@ export const RiderDashboard: React.FC = () => {
       o.status !== "cancelled"
   );
 
-  const completedDeliveries = orders.filter((o) => o.status === "delivered");
-  const todayEarnings =
-    480 +
-    completedDeliveries.reduce((sum, o) => sum + calculateHiddenRiderPayout(o), 0);
+  const completedDeliveries = orders.filter(
+    (o) => o.status === "delivered" && (isAdmin || (authUser && o.riderId === authUser.uid))
+  );
+  const todayEarnings = completedDeliveries.reduce(
+    (sum, o) => sum + calculateHiddenRiderPayout(o),
+    0
+  );
 
   const totalCodCollected = completedDeliveries
     .filter((o) => o.paymentMethod === "COD")
@@ -1201,7 +1204,7 @@ export const RiderDashboard: React.FC = () => {
             <div className="p-6 rounded-2xl bg-[#1F7A4C] text-white space-y-2">
               <p className="text-emerald-100">Choy Wallet Credit Balance</p>
               <p className="font-display text-3xl font-extrabold tabular-nums">
-                ₱{(profile?.walletBalance ?? 150).toFixed(2)}
+                ₱{(profile?.walletBalance ?? 0).toFixed(2)}
               </p>
               <p className="text-emerald-100/80 text-[11px]">Available for food purchases or cashout.</p>
             </div>

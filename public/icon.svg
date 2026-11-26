@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="choyBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D12D11" />
+      <stop offset="100%" stop-color="#A61F09" />
+    </linearGradient>
+    <linearGradient id="goldAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FBBF24" />
+      <stop offset="100%" stop-color="#E08E00" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#choyBg)" />
+  <circle cx="256" cy="256" r="196" fill="#114B22" opacity="0.22" />
+  <!-- Cloche / Food Dome -->
+  <path d="M126 284 C126 205 184 152 256 152 C328 152 386 205 386 284 Z" fill="#FAF8F5" />
+  <circle cx="256" cy="136" r="20" fill="url(#goldAccent)" />
+  <rect x="108" y="284" width="296" height="28" rx="14" fill="url(#goldAccent)" />
+  <!-- Speed Accent Stripes -->
+  <rect x="148" y="336" width="216" height="18" rx="9" fill="#FAF8F5" opacity="0.95" />
+  <rect x="184" y="370" width="144" height="14" rx="7" fill="#FBBF24" opacity="0.9" />
+  <!-- Monogram C -->
+  <path d="M286 206 A44 44 0 1 0 286 266" fill="none" stroke="#D12D11" stroke-width="20" stroke-linecap="round" />
+</svg>

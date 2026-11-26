@@ -94,16 +94,19 @@ const DEFAULT_CMS_SETTINGS: PlatformCmsSettings = {
   choyProMonthlyFee: 149,
   soundEnabled: true,
   storeStatuses: {
+    "Jollibee / Centro": "open",
     "Nanay's Sizzling & BBQ": "open",
     "Cebu Grill Hub": "open",
     "Sweet Corner": "open",
   },
   storePermits: {
+    "Jollibee / Centro": { dti: true, bir: true, mayors: true, sanitary: true },
     "Nanay's Sizzling & BBQ": { dti: true, bir: true, mayors: true, sanitary: true },
     "Cebu Grill Hub": { dti: true, bir: true, mayors: true, sanitary: true },
     "Sweet Corner": { dti: true, bir: true, mayors: true, sanitary: true },
   },
   dishApprovals: {},
+  dishMarkups: {},
   donationCampaigns: [
     {
       id: "don-feeding",
@@ -111,7 +114,7 @@ const DEFAULT_CMS_SETTINGS: PlatformCmsSettings = {
       description:
         "Provides warm rice bowls and bottled water to children and senior citizens across Surigao barangays.",
       goalAmount: 15000,
-      raisedAmount: 6450,
+      raisedAmount: 0,
     },
     {
       id: "don-typhoon",
@@ -119,13 +122,35 @@ const DEFAULT_CMS_SETTINGS: PlatformCmsSettings = {
       description:
         "Supports emergency hot meal packs dispatched by Choy partner kitchens and rider volunteers.",
       goalAmount: 25000,
-      raisedAmount: 11200,
+      raisedAmount: 0,
     },
   ],
   riderShiftAssignments: {},
 };
 
 function mergeCmsSettings(stored: Partial<PlatformCmsSettings>): PlatformCmsSettings {
+  const nextStatuses = {
+    ...DEFAULT_CMS_SETTINGS.storeStatuses,
+    ...(stored.storeStatuses || {}),
+  };
+  if (nextStatuses["Jollibee Surigao City"]) {
+    if (!stored.storeStatuses?.["Jollibee / Centro"]) {
+      nextStatuses["Jollibee / Centro"] = nextStatuses["Jollibee Surigao City"];
+    }
+    delete nextStatuses["Jollibee Surigao City"];
+  }
+
+  const nextPermits = {
+    ...DEFAULT_CMS_SETTINGS.storePermits,
+    ...(stored.storePermits || {}),
+  };
+  if (nextPermits["Jollibee Surigao City"]) {
+    if (!stored.storePermits?.["Jollibee / Centro"]) {
+      nextPermits["Jollibee / Centro"] = nextPermits["Jollibee Surigao City"];
+    }
+    delete nextPermits["Jollibee Surigao City"];
+  }
+
   return {
     ...DEFAULT_CMS_SETTINGS,
     ...stored,
@@ -133,16 +158,13 @@ function mergeCmsSettings(stored: Partial<PlatformCmsSettings>): PlatformCmsSett
       Array.isArray(stored.slides) && stored.slides.length > 0
         ? stored.slides
         : DEFAULT_CMS_SETTINGS.slides,
-    storeStatuses: {
-      ...DEFAULT_CMS_SETTINGS.storeStatuses,
-      ...(stored.storeStatuses || {}),
-    },
-    storePermits: {
-      ...DEFAULT_CMS_SETTINGS.storePermits,
-      ...(stored.storePermits || {}),
-    },
+    storeStatuses: nextStatuses,
+    storePermits: nextPermits,
     dishApprovals: {
       ...(stored.dishApprovals || {}),
+    },
+    dishMarkups: {
+      ...(stored.dishMarkups || {}),
     },
     donationCampaigns:
       Array.isArray(stored.donationCampaigns) && stored.donationCampaigns.length > 0
@@ -229,6 +251,19 @@ export interface SupabaseContextValue {
     mobile: string,
     pin: string
   ) => Promise<{ ok: boolean; error?: string; needsSetup?: boolean }>;
+  getJollibeeStoreStatus: () => Promise<{
+    mode: "env" | "claimed" | "unclaimed";
+    needsSetup: boolean;
+    mobileHint: string | null;
+  }>;
+  setupJollibeeStore: (
+    identifier: string,
+    pin: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  signInJollibeeStore: (
+    identifier: string,
+    pin: string
+  ) => Promise<{ ok: boolean; error?: string; needsSetup?: boolean }>;
   loginWithGoogle: () => Promise<void>;
   logout: () => Promise<void>;
   likeDish: (dish: Dish) => Promise<void>;
@@ -299,6 +334,7 @@ export interface SupabaseContextValue {
   resolveSupportTicket: (ticket: SupportTicket, status: "open" | "resolved") => Promise<void>;
   dismissActivityLog: (logId: string) => Promise<void>;
   runSystemCleaner: () => Promise<void>;
+  clearOperationalDemoData: () => Promise<void>;
   seedCatalogToSupabase: () => Promise<void>;
   promos: PromoCode[];
   allPromos: PromoCode[];
@@ -326,7 +362,7 @@ export interface SupabaseContextValue {
   updateCmsSettings: (patch: Partial<PlatformCmsSettings>) => void;
   setStoreStatus: (storeName: string, status: StoreOperatingStatus) => void;
   setStorePermit: (storeName: string, permitKey: keyof StorePermitChecklist, value: boolean) => void;
-  approveDish: (dishId: string, status: DishApprovalStatus) => void;
+  approveDish: (dishId: string, status: DishApprovalStatus, adminMarkup?: number) => void;
   notifications: NotificationItem[];
   pushNotification: (
     audience: NotificationItem["audience"],
@@ -347,7 +383,7 @@ function mapUserFromDb(row: any): UserProfile {
     uid: row.uid,
     displayName: row.display_name || "ChoyFood User",
     role: (row.role || "customer") as UserRole,
-    walletBalance: Number(row.wallet_balance ?? 150),
+    walletBalance: Number(row.wallet_balance ?? 0),
     choyProActive: Boolean(row.choy_pro_active),
     kycStatus: (row.kyc_status || "unverified") as UserProfile["kycStatus"],
     riderCode: row.rider_code || "",
@@ -355,7 +391,7 @@ function mapUserFromDb(row: any): UserProfile {
     referralCode: row.referral_code || "",
     referralEarnings: Number(row.referral_earnings ?? 0),
     referredCount: Number(row.referred_count ?? 0),
-    ratingScore: Number(row.rating_score ?? 4.9),
+    ratingScore: Number(row.rating_score ?? 5.0),
     riderPhotoUrl: row.rider_photo_url || "",
     avatarUrl: row.avatar_url || "",
     nickname: row.nickname || "",
@@ -378,7 +414,7 @@ function mapUserToDb(u: UserProfile, includeExtended = true) {
     referral_code: u.referralCode || "",
     referral_earnings: u.referralEarnings ?? 0,
     referred_count: u.referredCount ?? 0,
-    rating_score: u.ratingScore ?? 4.9,
+    rating_score: u.ratingScore ?? 5.0,
     rider_photo_url: u.riderPhotoUrl || "",
     updated_at: new Date().toISOString(),
   };
@@ -392,11 +428,19 @@ function mapUserToDb(u: UserProfile, includeExtended = true) {
 }
 
 function mapDishFromDb(row: any): Dish {
+  const price = Number(row.price ?? 0);
+  const adminMarkup = Math.max(0, Number(row.admin_markup ?? 0));
+  const storePrice =
+    row.store_price != null
+      ? Math.max(0, Number(row.store_price))
+      : Math.max(0, Math.round((price - adminMarkup) * 100) / 100);
   return {
     id: row.id,
     name: row.name,
     description: row.description || "",
-    price: Number(row.price ?? 0),
+    price,
+    storePrice,
+    adminMarkup,
     saleGroup: (row.sale_group || "Solo") as SaleGroup,
     storeName: row.store_name || "Partner Store",
     storeOwnerId: row.store_owner_id || "store_default",
@@ -426,6 +470,8 @@ function mapDishToDb(d: Dish, includeExtended = true) {
   if (!includeExtended) return base;
   return {
     ...base,
+    store_price: d.storePrice ?? d.price,
+    admin_markup: d.adminMarkup ?? 0,
     approval_status: d.approvalStatus || "approved",
   };
 }
@@ -706,16 +752,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   });
 
   const [notifications, setNotifications] = useState<NotificationItem[]>(() =>
-    readJsonStorage<NotificationItem[]>(NOTIF_STORAGE_KEY, [
-      {
-        id: "notif-welcome-1",
-        audience: "all",
-        title: "Welcome to CHOY DELIVERY",
-        message: "Use code CHOY25 for ₱25 OFF on orders ₱250+ or activate Choy Pro for ₱0 delivery.",
-        read: false,
-        createdAt: new Date().toISOString(),
-      },
-    ])
+    readJsonStorage<NotificationItem[]>(NOTIF_STORAGE_KEY, [])
   );
 
   const [riderDocsByUid, setRiderDocsByUid] = useState<Record<string, RiderOnboardingDocs>>(() =>
@@ -730,11 +767,24 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const allDishes = useMemo(
     () =>
-      rawAllDishes.map((d) => ({
-        ...d,
-        approvalStatus: cmsSettings.dishApprovals[d.id] || d.approvalStatus || "approved",
-      })),
-    [rawAllDishes, cmsSettings.dishApprovals]
+      rawAllDishes.map((d) => {
+        const markupEntry = cmsSettings.dishMarkups?.[d.id];
+        const storePrice =
+          markupEntry?.storePrice ?? d.storePrice ?? d.price;
+        const adminMarkup =
+          markupEntry?.adminMarkup ?? d.adminMarkup ?? 0;
+        const price = markupEntry
+          ? Math.round((storePrice + adminMarkup) * 100) / 100
+          : d.price;
+        return {
+          ...d,
+          storePrice,
+          adminMarkup,
+          price,
+          approvalStatus: cmsSettings.dishApprovals[d.id] || d.approvalStatus || "approved",
+        };
+      }),
+    [rawAllDishes, cmsSettings.dishApprovals, cmsSettings.dishMarkups]
   );
 
   const dishes = useMemo(
@@ -833,7 +883,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         riderDocsRes,
         notifsRes,
       ] = await Promise.all([
-        client.from("dishes").select("*").limit(100),
+        client.from("dishes").select("*").limit(200),
         client
           .from("promos")
           .select("*")
@@ -858,7 +908,28 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       ]);
 
       if (!dishesRes.error && dishesRes.data && dishesRes.data.length > 0) {
-        setRawAllDishes(dishesRes.data.map(mapDishFromDb));
+        const seedById = new Map(SEED_DISHES.map((s) => [s.id, s]));
+        const dbDishes = dishesRes.data.map(mapDishFromDb).map((d) => {
+          const seed = seedById.get(d.id);
+          const normalizedStoreName =
+            d.storeOwnerId === "store_jollibee_surigao" ||
+            d.storeName === "Jollibee Surigao City"
+              ? "Jollibee / Centro"
+              : d.storeName;
+          return {
+            ...d,
+            storeName: normalizedStoreName,
+            imageUrl:
+              seed && (!d.imageUrl || d.imageUrl.startsWith("/src/assets/images/"))
+                ? seed.imageUrl
+                : d.imageUrl,
+          };
+        });
+        const dbIds = new Set(dbDishes.map((d) => d.id));
+        const missingJollibee = SEED_DISHES.filter(
+          (d) => d.storeOwnerId === "store_jollibee_surigao" && !dbIds.has(d.id)
+        );
+        setRawAllDishes([...dbDishes, ...missingJollibee]);
       }
       if (!promosRes.error && promosRes.data && promosRes.data.length > 0) {
         setAllPromos(promosRes.data.map(mapPromoFromDb));
@@ -1061,7 +1132,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             BLUEPRINT_LIMITS.displayNameMax
           ),
           role: assignedRole,
-          walletBalance: 150,
+          walletBalance: 0,
           choyProActive: false,
           kycStatus: "unverified",
           riderCode: isBootstrapAdmin
@@ -1077,7 +1148,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           referralCode: `CHOY-${mappedUser.uid.slice(0, 6).toUpperCase()}`,
           referralEarnings: 0,
           referredCount: 0,
-          ratingScore: 4.9,
+          ratingScore: 5.0,
           createdAt: now,
           updatedAt: now,
         };
@@ -1277,7 +1348,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         uid: admin.uid,
         displayName: mappedUser.displayName || "Admin",
         role,
-        walletBalance: role === "super_admin" ? 1500 : 500,
+        walletBalance: 0,
         choyProActive: true,
         kycStatus: "verified",
         riderCode: role === "super_admin" ? "JC389" : "",
@@ -1417,6 +1488,136 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     },
     [applyVerifiedAdminSession, pushToast]
+  );
+
+  const getJollibeeStoreStatus = useCallback(
+    () => fetchServerPinStatus("/api/store-auth"),
+    [fetchServerPinStatus]
+  );
+
+  const applyVerifiedStoreSession = useCallback(
+    async (
+      token: string,
+      store: {
+        uid: string;
+        email: string;
+        displayName: string;
+        storeName?: string;
+        mobile?: string;
+      }
+    ) => {
+      adminBearerTokenRef.current = token;
+      const storeLabel = store.storeName || "Jollibee / Centro";
+      const mappedUser: AppAuthUser = {
+        uid: store.uid,
+        email: store.email,
+        emailVerified: true,
+        displayName: store.displayName || storeLabel,
+      };
+      setAuthUser(mappedUser);
+
+      const now = new Date().toISOString();
+      const storeProfile: UserProfile = {
+        uid: store.uid,
+        displayName: storeLabel,
+        role: "store",
+        walletBalance: 0,
+        choyProActive: false,
+        kycStatus: "verified",
+        riderCode: "",
+        storeName: storeLabel,
+        referralCode: "CHOY-JB-CENTRO",
+        referralEarnings: 0,
+        referredCount: 0,
+        ratingScore: 5.0,
+        createdAt: now,
+        updatedAt: now,
+      };
+      setProfile(storeProfile);
+      setIsAuthModalOpen(false);
+
+      const client = supabaseRef.current || (await ensureSupabaseClient());
+      if (client) {
+        supabaseRef.current = client;
+        setSupabase(client);
+        const { data: existing } = await client
+          .from("users")
+          .select("*")
+          .eq("uid", store.uid)
+          .maybeSingle();
+        if (existing) {
+          setProfile(mapUserFromDb({ ...existing, role: "store", store_name: storeLabel }));
+        } else {
+          await upsertUserResilient(client, storeProfile);
+        }
+        syncFromSupabase(client);
+      }
+    },
+    [syncFromSupabase]
+  );
+
+  const setupJollibeeStore = useCallback(
+    async (identifier: string, pin: string): Promise<{ ok: boolean; error?: string }> => {
+      try {
+        const res = await fetch("/api/store-auth/setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mobile: identifier.trim(), pin: pin.trim() }),
+        });
+        const data = await res.json();
+        const storePayload = data.store || data.admin;
+        if (!res.ok || !data.token || !storePayload) {
+          return {
+            ok: false,
+            error: data.error || "Unable to complete Jollibee / Centro store setup.",
+          };
+        }
+        await applyVerifiedStoreSession(data.token, storePayload);
+        pushToast(
+          "Jollibee / Centro Configured",
+          "Store PIN saved securely on the server. You are now signed in to Store Dashboard.",
+          "success"
+        );
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "Could not reach the authentication server." };
+      }
+    },
+    [applyVerifiedStoreSession, pushToast]
+  );
+
+  const signInJollibeeStore = useCallback(
+    async (
+      identifier: string,
+      pin: string
+    ): Promise<{ ok: boolean; error?: string; needsSetup?: boolean }> => {
+      try {
+        const res = await fetch("/api/store-auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mobile: identifier.trim(), pin: pin.trim() }),
+        });
+        const data = await res.json();
+        const storePayload = data.store || data.admin;
+        if (!res.ok || !data.token || !storePayload) {
+          return {
+            ok: false,
+            error: data.error || "Invalid Jollibee / Centro login ID or PIN.",
+            needsSetup: Boolean(data.needsSetup),
+          };
+        }
+        await applyVerifiedStoreSession(data.token, storePayload);
+        pushToast(
+          "Jollibee / Centro Signed In",
+          "Kitchen queue and Jollibee menu catalog are now active.",
+          "success"
+        );
+        return { ok: true };
+      } catch {
+        return { ok: false, error: "Could not reach the authentication server." };
+      }
+    },
+    [applyVerifiedStoreSession, pushToast]
   );
 
   const signInOpsAdmin = useCallback(
@@ -1616,14 +1817,39 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const approveDish = useCallback(
-    (dishId: string, status: DishApprovalStatus) => {
+    (dishId: string, status: DishApprovalStatus, adminMarkupInput?: number) => {
+      if (!isAdmin) return;
+      const target = allDishes.find((d) => d.id === dishId);
+      const baseStorePrice = Math.max(0, target?.storePrice ?? target?.price ?? 0);
+      const safeMarkup =
+        adminMarkupInput !== undefined
+          ? Math.max(0, Math.round((Number(adminMarkupInput) || 0) * 100) / 100)
+          : Math.max(0, target?.adminMarkup ?? 0);
+      const customerPrice = Math.round((baseStorePrice + safeMarkup) * 100) / 100;
+      const now = new Date().toISOString();
+
       setRawAllDishes((prev) =>
-        prev.map((d) => (d.id === dishId ? { ...d, approvalStatus: status } : d))
+        prev.map((d) =>
+          d.id === dishId
+            ? {
+                ...d,
+                approvalStatus: status,
+                storePrice: baseStorePrice,
+                adminMarkup: safeMarkup,
+                price: customerPrice,
+                updatedAt: now,
+              }
+            : d
+        )
       );
       setCmsSettings((prev) => {
         const next: PlatformCmsSettings = {
           ...prev,
           dishApprovals: { ...prev.dishApprovals, [dishId]: status },
+          dishMarkups: {
+            ...(prev.dishMarkups || {}),
+            [dishId]: { storePrice: baseStorePrice, adminMarkup: safeMarkup },
+          },
         };
         writeJsonStorage(CMS_STORAGE_KEY, next);
         persistCmsToSupabase(next);
@@ -1631,14 +1857,43 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
       const client = supabaseRef.current;
       if (client) {
-        void client
-          .from("dishes")
-          .update({ approval_status: status, updated_at: new Date().toISOString() })
-          .eq("id", dishId);
+        if (target) {
+          void upsertDishResilient(client, {
+            ...target,
+            approvalStatus: status,
+            storePrice: baseStorePrice,
+            adminMarkup: safeMarkup,
+            price: customerPrice,
+            updatedAt: now,
+          });
+        } else {
+          void client
+            .from("dishes")
+            .update({ approval_status: status, price: customerPrice, updated_at: now })
+            .eq("id", dishId);
+        }
       }
-      pushToast("Menu Approval Updated", `Dish marked as ${status}.`, "success");
+
+      if (target) {
+        pushNotification(
+          "store",
+          status === "approved" ? "Dish Approved & Live" : "Dish Review Update",
+          status === "approved"
+            ? `"${target.name}" approved (Store ₱${baseStorePrice.toFixed(2)} + Admin Markup ₱${safeMarkup.toFixed(2)} = ₱${customerPrice.toFixed(2)} customer price).`
+            : `"${target.name}" was marked ${status} by Admin.`,
+          false
+        );
+      }
+
+      pushToast(
+        status === "approved" ? "Dish Approved & Posted" : "Menu Approval Updated",
+        status === "approved"
+          ? `${target?.name || "Dish"} live at ₱${customerPrice.toFixed(2)} (Store ₱${baseStorePrice.toFixed(2)} + Markup ₱${safeMarkup.toFixed(2)}).`
+          : `Dish marked as ${status}.`,
+        "success"
+      );
     },
-    [persistCmsToSupabase, pushToast]
+    [isAdmin, allDishes, persistCmsToSupabase, pushNotification, pushToast]
   );
 
   const likeDish = useCallback(
@@ -1673,11 +1928,14 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
       const approvalStatus: DishApprovalStatus = isAdmin ? "approved" : "pending";
+      const storeBasePrice = Math.max(1, Math.round((Number(input.price) || 1) * 100) / 100);
       const newDish: Dish = {
         id: `dish_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         name: input.name.trim().slice(0, BLUEPRINT_LIMITS.dishNameMax),
         description: input.description.trim().slice(0, BLUEPRINT_LIMITS.dishDescMax),
-        price: Number(input.price),
+        price: storeBasePrice,
+        storePrice: storeBasePrice,
+        adminMarkup: 0,
         saleGroup: input.saleGroup,
         storeName: input.storeName.trim().slice(0, BLUEPRINT_LIMITS.storeNameMax),
         storeOwnerId: authUser.uid,
@@ -1694,6 +1952,10 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         const next: PlatformCmsSettings = {
           ...prev,
           dishApprovals: { ...prev.dishApprovals, [newDish.id]: approvalStatus },
+          dishMarkups: {
+            ...(prev.dishMarkups || {}),
+            [newDish.id]: { storePrice: storeBasePrice, adminMarkup: 0 },
+          },
         };
         writeJsonStorage(CMS_STORAGE_KEY, next);
         persistCmsToSupabase(next);
@@ -1708,24 +1970,24 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
       }
-      await logActivity(`Added menu dish "${newDish.name}" (₱${newDish.price})`, "store");
+      await logActivity(`Added menu dish "${newDish.name}" (Store ₱${storeBasePrice.toFixed(2)})`, "store");
       if (approvalStatus === "pending") {
         pushNotification(
           "admin",
-          "New Store Dish Pending Approval",
-          `${newDish.storeName} submitted "${newDish.name}" (₱${newDish.price}) for menu approval.`,
+          "New Store Dish Pending Approval & Markup",
+          `${newDish.storeName} posted "${newDish.name}" at ₱${storeBasePrice.toFixed(2)}. Set Admin markup & approve to publish to Customer Dashboard.`,
           true
         );
       }
       pushToast(
-        approvalStatus === "pending" ? "Dish Submitted for Approval" : "Dish Added",
+        approvalStatus === "pending" ? "Dish Submitted for Admin Approval" : "Dish Added",
         approvalStatus === "pending"
-          ? `${newDish.name} saved and queued for Admin approval.`
+          ? `${newDish.name} (₱${storeBasePrice.toFixed(2)}) is awaiting Admin markup & approval before posting to customers.`
           : `${newDish.name} saved to Supabase.`,
         "success"
       );
     },
-    [authUser, isAdmin, logActivity, pushNotification, pushToast]
+    [authUser, isAdmin, logActivity, persistCmsToSupabase, pushNotification, pushToast]
   );
 
   const toggleDishAvailability = useCallback(
@@ -1751,21 +2013,69 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   const updateDishPrice = useCallback(
-    async (dish: Dish, newPrice: number) => {
-      if (!Number.isFinite(newPrice) || newPrice < 1) return;
+    async (dish: Dish, newStorePrice: number) => {
+      if (!Number.isFinite(newStorePrice) || newStorePrice < 1) return;
+      const cleanStorePrice = Math.round(newStorePrice * 100) / 100;
+      const existingMarkup = Math.max(0, dish.adminMarkup ?? 0);
+      const nextCustomerPrice = Math.round((cleanStorePrice + existingMarkup) * 100) / 100;
+      const nextApproval: DishApprovalStatus = isAdmin ? dish.approvalStatus || "approved" : "pending";
+      const now = new Date().toISOString();
+
       setRawAllDishes((prev) =>
-        prev.map((d) => (d.id === dish.id ? { ...d, price: newPrice } : d))
+        prev.map((d) =>
+          d.id === dish.id
+            ? {
+                ...d,
+                storePrice: cleanStorePrice,
+                adminMarkup: existingMarkup,
+                price: nextCustomerPrice,
+                approvalStatus: nextApproval,
+                updatedAt: now,
+              }
+            : d
+        )
       );
+      setCmsSettings((prev) => {
+        const next: PlatformCmsSettings = {
+          ...prev,
+          dishApprovals: { ...prev.dishApprovals, [dish.id]: nextApproval },
+          dishMarkups: {
+            ...(prev.dishMarkups || {}),
+            [dish.id]: { storePrice: cleanStorePrice, adminMarkup: existingMarkup },
+          },
+        };
+        writeJsonStorage(CMS_STORAGE_KEY, next);
+        persistCmsToSupabase(next);
+        return next;
+      });
       const client = supabaseRef.current;
       if (client) {
-        await client
-          .from("dishes")
-          .update({ price: newPrice, updated_at: new Date().toISOString() })
-          .eq("id", dish.id);
+        await upsertDishResilient(client, {
+          ...dish,
+          storePrice: cleanStorePrice,
+          adminMarkup: existingMarkup,
+          price: nextCustomerPrice,
+          approvalStatus: nextApproval,
+          updatedAt: now,
+        });
       }
-      pushToast("Price Updated", `${dish.name} is now ₱${newPrice.toFixed(2)}.`, "success");
+      if (!isAdmin) {
+        pushNotification(
+          "admin",
+          "Store Price Change Needs Approval",
+          `${dish.storeName} updated "${dish.name}" store price to ₱${cleanStorePrice.toFixed(2)}. Approve & confirm markup to post live.`,
+          true
+        );
+      }
+      pushToast(
+        isAdmin ? "Price Updated" : "Price Submitted for Admin Approval",
+        isAdmin
+          ? `${dish.name} updated to ₱${nextCustomerPrice.toFixed(2)}.`
+          : `${dish.name} store price ₱${cleanStorePrice.toFixed(2)} queued for Admin approval before posting to customers.`,
+        isAdmin ? "success" : "info"
+      );
     },
-    [pushToast]
+    [isAdmin, persistCmsToSupabase, pushNotification, pushToast]
   );
 
   const deleteMenuDish = useCallback(
@@ -1837,6 +2147,17 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (!authUser || !profile) {
         setIsAuthModalOpen(true);
         pushToast("Sign In Required", "Please sign in with your account to place an order.", "error");
+        return null;
+      }
+
+      if (profile.kycStatus !== "verified") {
+        pushToast(
+          "Verification Required Before Ordering",
+          profile.kycStatus === "pending"
+            ? "Your KYC verification is submitted and awaiting Super Admin approval."
+            : "Please fill out and complete your Verification (KYC) before placing an order.",
+          "error"
+        );
         return null;
       }
 
@@ -2217,7 +2538,10 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const reviewKyc = useCallback(
     async (record: KycVaultRecord, decision: "verified" | "rejected") => {
-      if (!isAdmin) return;
+      if (!isSuperAdmin) {
+        pushToast("Super Admin Only", "Only the Super Admin can approve or reject KYC records.", "error");
+        return;
+      }
       const now = new Date().toISOString();
       setKycRecords((prev) =>
         prev.map((r) => (r.uid === record.uid ? { ...r, status: decision, updatedAt: now } : r))
@@ -2243,7 +2567,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       await logActivity(`KYC for ${record.displayName} marked ${decision}`, "kyc");
       pushToast("KYC Reviewed", `${record.displayName} is now ${decision}.`, "success");
     },
-    [isAdmin, profile, logActivity, pushToast]
+    [isSuperAdmin, profile, logActivity, pushToast]
   );
 
   const submitSupportTicket = useCallback(
@@ -2332,6 +2656,60 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     await logActivity(`System Cleaner purged ${count} old activity entries.`, "system");
     pushToast("System Cleaner Completed", `Purged ${count} logs.`, "success");
   }, [isAdmin, activityLogs.length, logActivity, pushToast]);
+
+  const clearOperationalDemoData = useCallback(async () => {
+    if (!isAdmin) {
+      pushToast("Super Admin Only", "Only Super Admin can clear operational demo data.", "error");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const resetCampaigns = cmsSettings.donationCampaigns.map((c) => ({ ...c, raisedAmount: 0 }));
+    const nextCms: PlatformCmsSettings = { ...cmsSettings, donationCampaigns: resetCampaigns };
+    setCmsSettings(nextCms);
+    writeJsonStorage(CMS_STORAGE_KEY, nextCms);
+
+    setOrders([]);
+    setSupportTickets([]);
+    setActivityLogs([]);
+    setNotifications([]);
+    setGameBonusByUid({});
+    setRawAllDishes((prev) => prev.map((d) => ({ ...d, likes: 0 })));
+    setAllUsers((prev) => prev.map((u) => ({ ...u, gameBonusPoints: 0 })));
+    if (profile) {
+      setProfile({ ...profile, gameBonusPoints: 0, updatedAt: now });
+    }
+
+    try {
+      window.localStorage.removeItem(ORDER_EXTRAS_STORAGE_KEY);
+      window.localStorage.removeItem(NOTIF_STORAGE_KEY);
+      window.localStorage.removeItem(GAME_BONUS_STORAGE_KEY);
+    } catch {
+      // Ignore storage removal errors gracefully
+    }
+
+    const client = supabaseRef.current;
+    if (client) {
+      await Promise.all([
+        client.from("orders").delete().neq("id", ""),
+        client.from("support_tickets").delete().neq("id", ""),
+        client.from("activity_logs").delete().neq("id", ""),
+        client.from("notifications").delete().neq("id", ""),
+        client.from("dishes").update({ likes: 0, updated_at: now }).neq("id", ""),
+        client.from("platform_settings").upsert({
+          id: "default",
+          settings: nextCms,
+          updated_at: now,
+        }),
+      ]);
+    }
+
+    pushToast(
+      "Live Ledger Cleared",
+      "All demo orders, tickets, logs, notifications, dish likes, and donation totals have been reset to zero.",
+      "success"
+    );
+  }, [isAdmin, cmsSettings, profile, pushToast]);
 
   const seedCatalogToSupabase = useCallback(async () => {
     setRawAllDishes(SEED_DISHES);
@@ -2744,6 +3122,9 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         getOpsAdminStatus,
         setupOpsAdmin,
         signInOpsAdmin,
+        getJollibeeStoreStatus,
+        setupJollibeeStore,
+        signInJollibeeStore,
         loginWithGoogle,
         logout,
         likeDish,
@@ -2766,6 +3147,7 @@ export const SupabaseProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         resolveSupportTicket,
         dismissActivityLog,
         runSystemCleaner,
+        clearOperationalDemoData,
         seedCatalogToSupabase,
         promos,
         allPromos,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { AppView, CartItem, Dish, Order, UserRole } from "./types/choyfood";
 import { DISH_IMAGES } from "./data/seedData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -14,7 +14,8 @@ import { KycModal } from "./components/KycModal";
 import { AuthModal } from "./components/AuthModal";
 import { CartDrawer } from "./components/CartDrawer";
 import { AskChoyDrawer } from "./components/AskChoyDrawer";
-import { Download, LogIn, LogOut, Menu, ShieldCheck, ShoppingBag, X } from "lucide-react";
+import { OfflineIndicator, PWAInstallButton } from "./components/PWAInstallButton";
+import { LogIn, LogOut, Menu, ShieldCheck, ShoppingBag, X } from "lucide-react";
 
 const ROLE_TABS: { id: AppView; role: UserRole; label: string }[] = [
   { id: "super_admin", role: "super_admin", label: "1. Super Admin" },
@@ -47,47 +48,37 @@ function ChoyFoodShell() {
     seq: 0,
   });
   const [isKycOpen, setIsKycOpen] = useState(false);
-  const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
-
-  useEffect(() => {
-    const handler = (e: Event) => {
-      e.preventDefault();
-      setInstallPromptEvent(e);
-    };
-    window.addEventListener("beforeinstallprompt", handler);
-    return () => window.removeEventListener("beforeinstallprompt", handler);
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!installPromptEvent) {
-      pushToast(
-        "Install ChoyFood App",
-        "Add ChoyFood to your mobile home screen via your browser menu (Add to Home Screen).",
-        "info"
-      );
-      return;
-    }
-    installPromptEvent.prompt();
-    const result = await installPromptEvent.userChoice;
-    if (result.outcome === "accepted") {
-      pushToast("App Installed", "Thank you for installing ChoyFood!", "success");
-    }
-    setInstallPromptEvent(null);
-  };
+  const [requestedStore, setRequestedStore] = useState<{
+    name: string;
+    dish?: Dish | null;
+    seq: number;
+  } | null>(null);
 
   const cartCount = cart.reduce((sum, item) => sum + item.qty, 0);
 
-  const handleAddToCart = (dish: Dish) => {
+  const handleAddToCart = (dish: Dish, qty = 1, choiceLabel?: string) => {
+    const safeQty = Math.max(1, Math.floor(qty));
     setCart((prev) => {
       const existing = prev.find((item) => item.dish.id === dish.id);
       if (existing) {
         return prev.map((item) =>
-          item.dish.id === dish.id ? { ...item, qty: item.qty + 1 } : item
+          item.dish.id === dish.id
+            ? {
+                ...item,
+                qty: item.qty + safeQty,
+                choiceLabel: choiceLabel || item.choiceLabel,
+              }
+            : item
         );
       }
-      return [...prev, { dish, qty: 1 }];
+      return [...prev, { dish, qty: safeQty, choiceLabel }];
     });
-    pushToast("Added to Bag", `${dish.name} — ₱${dish.price.toFixed(2)}`, "success");
+    const choiceSuffix = choiceLabel ? ` (${choiceLabel})` : "";
+    pushToast(
+      "Added to Bag",
+      `${safeQty}x ${dish.name}${choiceSuffix} — ₱${(dish.price * safeQty).toFixed(2)}`,
+      "success"
+    );
   };
 
   const handleReorderOrder = (order: Order) => {
@@ -133,6 +124,17 @@ function ChoyFoodShell() {
     setView("customer");
     setCustomerTab(tab);
     setCustomerTabSeq((prev) => prev + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleOpenStorefront = (storeName: string, dish: Dish | null = null) => {
+    setView("customer");
+    setCustomerTab("explore");
+    setRequestedStore((prev) => ({
+      name: storeName,
+      dish,
+      seq: (prev?.seq || 0) + 1,
+    }));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -221,14 +223,7 @@ function ChoyFoodShell() {
           </nav>
 
           <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              onClick={handleInstallClick}
-              className="inline-flex items-center gap-1.5 bg-stone-100 hover:bg-stone-200 text-[#1C1917] text-xs font-semibold px-3 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
-              title="Install ChoyFood Mobile App"
-            >
-              <Download className="w-3.5 h-3.5 text-[#D12D11]" />
-              <span className="hidden sm:inline">Install App</span>
-            </button>
+            <PWAInstallButton variant="header" />
 
             {authUser ? (
               <button
@@ -322,6 +317,7 @@ function ChoyFoodShell() {
             view={view}
             onNavigate={navigate}
             onOpenKyc={() => setIsKycOpen(true)}
+            onSelectStore={handleOpenStorefront}
           />
         )}
         {view === "blog" && (
@@ -329,6 +325,7 @@ function ChoyFoodShell() {
             view={view}
             onNavigate={navigate}
             onOpenKyc={() => setIsKycOpen(true)}
+            onSelectStore={handleOpenStorefront}
           />
         )}
         {view === "about" && (
@@ -336,6 +333,7 @@ function ChoyFoodShell() {
             view={view}
             onNavigate={navigate}
             onOpenKyc={() => setIsKycOpen(true)}
+            onSelectStore={handleOpenStorefront}
           />
         )}
         {view === "contact" && (
@@ -343,6 +341,7 @@ function ChoyFoodShell() {
             view={view}
             onNavigate={navigate}
             onOpenKyc={() => setIsKycOpen(true)}
+            onSelectStore={handleOpenStorefront}
           />
         )}
         {view === "privacy" && (
@@ -350,6 +349,7 @@ function ChoyFoodShell() {
             view={view}
             onNavigate={navigate}
             onOpenKyc={() => setIsKycOpen(true)}
+            onSelectStore={handleOpenStorefront}
           />
         )}
         {view === "super_admin" && <AdminDashboard />}
@@ -365,6 +365,7 @@ function ChoyFoodShell() {
             requestedTab={customerTab}
             tabRequestSeq={customerTabSeq}
             onTabChange={setCustomerTab}
+            requestedStore={requestedStore}
           />
         )}
       </main>
@@ -415,10 +416,12 @@ function ChoyFoodShell() {
         cart={cart}
         onChangeQty={handleChangeCartQty}
         onClearCart={() => setCart([])}
+        onOpenKyc={() => setIsKycOpen(true)}
         externalPromoCode={appliedRewardPromo.code}
         externalPromoSeq={appliedRewardPromo.seq}
       />
       <AskChoyDrawer />
+      <OfflineIndicator />
 
       {/* Non-Blocking Toast Stack (replaces window.alert) */}
       {toasts.length > 0 && (

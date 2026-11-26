@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { AppView, BlogPost } from "../types/choyfood";
+import { AppView, BlogPost, Dish } from "../types/choyfood";
 import { COMMUNITY_BLOG_POSTS, HERO_FEAST_IMAGE } from "../data/seedData";
 import { useChoyFood } from "../context/SupabaseContext";
 import {
@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ShieldCheck,
   ShoppingCart,
+  Store,
   Timer,
   Wallet,
   X,
@@ -17,10 +18,16 @@ interface PublicPagesProps {
   view: "landing" | "blog" | "about" | "contact" | "privacy";
   onNavigate: (view: AppView) => void;
   onOpenKyc: () => void;
+  onSelectStore?: (storeName: string, dish?: Dish | null) => void;
 }
 
-export const PublicPages: React.FC<PublicPagesProps> = ({ view, onNavigate, onOpenKyc }) => {
-  const { submitSupportTicket, supportTickets } = useChoyFood();
+export const PublicPages: React.FC<PublicPagesProps> = ({
+  view,
+  onNavigate,
+  onOpenKyc,
+  onSelectStore,
+}) => {
+  const { submitSupportTicket, supportTickets, dishes, cmsSettings } = useChoyFood();
   const [activePost, setActivePost] = useState<BlogPost | null>(null);
 
   // Contact form state
@@ -157,6 +164,78 @@ export const PublicPages: React.FC<PublicPagesProps> = ({ view, onNavigate, onOp
             </p>
           </div>
         </section>
+
+        {/* Clickable Partner Storefronts Directory */}
+        {(() => {
+          const storeMap = new Map<string, Dish[]>();
+          dishes.forEach((d) => {
+            if (!d.storeName) return;
+            const list = storeMap.get(d.storeName) || [];
+            list.push(d);
+            storeMap.set(d.storeName, list);
+          });
+          const stores = Array.from(storeMap.entries()).sort((a, b) =>
+            a[0].localeCompare(b[0])
+          );
+          if (stores.length === 0) return null;
+          return (
+            <section className="border-t border-stone-200 pt-10 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-display text-xl font-bold text-[#1C1917]">
+                    Partner Kitchens &amp; Storefronts
+                  </h2>
+                  <p className="text-xs text-stone-500">
+                    Tap any store name to open its dedicated Storefront Dashboard and pick food
+                    choices.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onNavigate("customer")}
+                  className="text-xs font-semibold text-[#D12D11] hover:underline inline-flex items-center gap-1 self-start sm:self-auto"
+                >
+                  <span>View All Menus</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {stores.map(([storeName, storeDishes]) => {
+                  const status = cmsSettings.storeStatuses[storeName] || "open";
+                  return (
+                    <button
+                      key={storeName}
+                      type="button"
+                      onClick={() =>
+                        onSelectStore ? onSelectStore(storeName, null) : onNavigate("customer")
+                      }
+                      className="text-left bg-white hover:bg-amber-50/40 border border-stone-200 hover:border-[#D12D11]/50 rounded-xl p-4 flex items-center justify-between gap-3 transition-all shadow-xs group"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-lg bg-[#D12D11]/10 text-[#D12D11] flex items-center justify-center shrink-0">
+                          <Store className="w-5 h-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-display text-sm font-bold text-[#1C1917] group-hover:text-[#D12D11] truncate transition-colors">
+                            {storeName}
+                          </p>
+                          <p className="text-xs text-stone-500 tabular-nums">
+                            {storeDishes.length} approved choice
+                            {storeDishes.length === 1 ? "" : "s"} ·{" "}
+                            <span className="text-[#1F7A4C] font-semibold">
+                              {status === "coming_soon" ? "Coming Soon" : "Open"}
+                            </span>
+                          </p>
+                        </div>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-stone-400 group-hover:text-[#D12D11] shrink-0 transition-colors" />
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })()}
       </div>
     );
   }

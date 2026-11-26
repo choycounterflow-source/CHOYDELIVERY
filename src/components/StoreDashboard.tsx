@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useChoyFood } from "../context/SupabaseContext";
 import { DISH_IMAGES, ORDER_STEPS } from "../data/seedData";
 import { Dish, SaleGroup, StorePermitChecklist } from "../types/choyfood";
@@ -32,6 +32,22 @@ const IMAGE_PRESETS = [
   { label: "Crispy Pata Feast", url: DISH_IMAGES.crispyPata },
   { label: "Halo-Halo Supreme", url: DISH_IMAGES.haloHalo },
   { label: "Charcoal Pork BBQ", url: DISH_IMAGES.porkBbq },
+  { label: "Garlic Rice & Fried Egg", url: DISH_IMAGES.garlicRiceEgg },
+  { label: "Chickenjoy Rice Meal", url: DISH_IMAGES.jbChickenjoy },
+  { label: "Chickenjoy Family Bucket", url: DISH_IMAGES.jbChickenBucket },
+  { label: "Jolly Spaghetti", url: DISH_IMAGES.jbSpaghetti },
+  { label: "Palabok Fiesta", url: DISH_IMAGES.jbPalabok },
+  { label: "Chickenjoy w/ Spaghetti", url: DISH_IMAGES.jbChickenSpaghetti },
+  { label: "Chickenjoy w/ Palabok", url: DISH_IMAGES.jbChickenPalabok },
+  { label: "Chickenjoy w/ Burger Steak", url: DISH_IMAGES.jbChickenSteak },
+  { label: "Yumburger / Cheeseburger", url: DISH_IMAGES.jbYumburger },
+  { label: "Crunchy Chicken Sandwich", url: DISH_IMAGES.jbChickenSandwich },
+  { label: "Burger Steak Meal", url: DISH_IMAGES.jbBurgerSteak },
+  { label: "Breakfast Silog Plate", url: DISH_IMAGES.jbSilogBreakfast },
+  { label: "Jolly Crispy Fries", url: DISH_IMAGES.jbCrispyFries },
+  { label: "Peach Mango Pie", url: DISH_IMAGES.jbPeachMangoPie },
+  { label: "Choco Sundae Twirl", url: DISH_IMAGES.jbChocoSundae },
+  { label: "Coke Float", url: DISH_IMAGES.jbCokeFloat },
 ];
 
 export const StoreDashboard: React.FC = () => {
@@ -79,6 +95,28 @@ export const StoreDashboard: React.FC = () => {
 
   const canManageCatalog = Boolean(authUser && (isAdmin || profile?.role === "store"));
   const currentStoreLabel = profile?.storeName || "Nanay's Sizzling & BBQ";
+  const isScopedStoreUser = Boolean(!isAdmin && profile?.role === "store" && profile?.storeName);
+
+  useEffect(() => {
+    if (profile?.storeName) {
+      setStoreName(profile.storeName);
+    }
+  }, [profile?.storeName]);
+
+  const matchesCurrentStore = (itemStoreName: string, itemStoreOwnerId?: string) => {
+    if (!isScopedStoreUser) return true;
+    const targetLower = currentStoreLabel.toLowerCase();
+    if (itemStoreName.toLowerCase() === targetLower) return true;
+    if (
+      targetLower === "jollibee / centro" &&
+      (itemStoreOwnerId === "store_jollibee_surigao" ||
+        itemStoreName.toLowerCase() === "jollibee surigao city")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
   const storeOperatingStatus = cmsSettings.storeStatuses[currentStoreLabel] || "open";
   const currentPermits: StorePermitChecklist = cmsSettings.storePermits[currentStoreLabel] || {
     dti: false,
@@ -94,7 +132,15 @@ export const StoreDashboard: React.FC = () => {
   };
 
   const kitchenOrders = orders.filter(
-    (o) => o.status !== "delivered" && o.status !== "cancelled"
+    (o) =>
+      o.status !== "delivered" &&
+      o.status !== "cancelled" &&
+      matchesCurrentStore(o.storeName, o.storeOwnerId)
+  );
+
+  const scopedDishes = useMemo(
+    () => allDishes.filter((d) => matchesCurrentStore(d.storeName, d.storeOwnerId)),
+    [allDishes, isScopedStoreUser, currentStoreLabel]
   );
 
   const storeSalesOrders = useMemo(
@@ -102,9 +148,9 @@ export const StoreDashboard: React.FC = () => {
       orders.filter(
         (o) =>
           o.status !== "cancelled" &&
-          (isAdmin || o.storeName.toLowerCase() === currentStoreLabel.toLowerCase())
+          (isAdmin || matchesCurrentStore(o.storeName, o.storeOwnerId))
       ),
-    [orders, isAdmin, currentStoreLabel]
+    [orders, isAdmin, isScopedStoreUser, currentStoreLabel]
   );
 
   const totalStoreRevenue = storeSalesOrders.reduce((sum, o) => sum + o.subtotal, 0);
@@ -133,7 +179,7 @@ export const StoreDashboard: React.FC = () => {
 
   const handleStartEditPrice = (dish: Dish) => {
     setEditingPriceId(dish.id);
-    setDraftPrice(String(dish.price));
+    setDraftPrice(String(dish.storePrice ?? dish.price));
     setConfirmDeleteId(null);
   };
 
@@ -144,7 +190,7 @@ export const StoreDashboard: React.FC = () => {
     setEditingPriceId(null);
   };
 
-  const availableCount = allDishes.filter((d) => d.available).length;
+  const availableCount = scopedDishes.filter((d) => d.available).length;
 
   const handleStorePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,11 +408,11 @@ export const StoreDashboard: React.FC = () => {
               Live Store Menu Catalog
             </h2>
             <p className="text-xs text-stone-500">
-              Toggle availability, edit prices inline, or track Super Admin / Admin dish approval status
+              Toggle availability, edit store base prices (requires Admin approval before posting live), or track approval status
             </p>
           </div>
           <span className="text-xs text-stone-500 font-mono tabular-nums">
-            {availableCount} in stock · {allDishes.length} total dishes
+            {availableCount} in stock · {scopedDishes.length} total dishes
           </span>
         </div>
 
@@ -378,13 +424,13 @@ export const StoreDashboard: React.FC = () => {
                 <th className="py-2.5 px-3 font-semibold">Store &amp; Group</th>
                 <th className="py-2.5 px-3 font-semibold">Approval</th>
                 <th className="py-2.5 px-3 font-semibold">Stock Status</th>
-                <th className="py-2.5 px-3 font-semibold text-right">Price</th>
+                <th className="py-2.5 px-3 font-semibold text-right">Store Price</th>
                 <th className="py-2.5 px-3 font-semibold text-right">Likes</th>
                 <th className="py-2.5 pl-3 font-semibold text-right">Manage</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {allDishes.map((dish) => {
+              {scopedDishes.map((dish) => {
                 const isEditingPrice = editingPriceId === dish.id;
                 const isConfirmingDelete = confirmDeleteId === dish.id;
                 const approval = dish.approvalStatus || "approved";
@@ -445,15 +491,22 @@ export const StoreDashboard: React.FC = () => {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => canManageCatalog && handleStartEditPrice(dish)}
-                          disabled={!canManageCatalog}
-                          className="inline-flex items-center gap-1 hover:text-[#D12D11] disabled:hover:text-[#1C1917] transition-colors"
-                          title={canManageCatalog ? "Click to edit price" : "Sign in as Store/Admin"}
-                        >
-                          <span>₱{dish.price.toFixed(2)}</span>
-                          {canManageCatalog && <Pencil className="w-3 h-3 text-stone-400" />}
-                        </button>
+                        <div className="flex flex-col items-end">
+                          <button
+                            onClick={() => canManageCatalog && handleStartEditPrice(dish)}
+                            disabled={!canManageCatalog}
+                            className="inline-flex items-center gap-1 hover:text-[#D12D11] disabled:hover:text-[#1C1917] transition-colors"
+                            title={canManageCatalog ? "Click to edit store price (requires Admin approval)" : "Sign in as Store/Admin"}
+                          >
+                            <span>₱{(dish.storePrice ?? dish.price).toFixed(2)}</span>
+                            {canManageCatalog && <Pencil className="w-3 h-3 text-stone-400" />}
+                          </button>
+                          {(dish.adminMarkup ?? 0) > 0 && (
+                            <span className="text-[10px] font-normal text-stone-500">
+                              Customer: ₱{dish.price.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
                       )}
                     </td>
                     <td className="py-3 px-3 text-right font-mono text-xs text-stone-600 tabular-nums">
@@ -818,10 +871,14 @@ export const StoreDashboard: React.FC = () => {
                 />
               </div>
 
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-[11px] text-amber-900">
+                All newly posted dishes and price updates stay hidden until reviewed and approved by Admin (with any platform markup) before posting to the Customer Dashboard.
+              </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-stone-700 mb-1">
-                    Price (PHP)
+                    Store Price (PHP)
                   </label>
                   <input
                     type="number"

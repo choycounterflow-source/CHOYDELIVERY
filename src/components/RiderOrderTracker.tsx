@@ -64,7 +64,7 @@ function formatSyncTime(date: Date | null): string {
 }
 
 export const RiderOrderTracker: React.FC = () => {
-  const { authUser, profile, isAdmin, orders, advanceOrder, loginWithGoogle } = useChoyFood();
+  const { authUser, profile, isAdmin, orders, advanceOrder, openAuthModal } = useChoyFood();
 
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(() => new Date());
@@ -183,7 +183,7 @@ export const RiderOrderTracker: React.FC = () => {
             </p>
           </div>
           <button
-            onClick={loginWithGoogle}
+            onClick={() => openAuthModal(profile?.role || "rider")}
             className="bg-[#1F7A4C] hover:bg-emerald-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
           >
             Sign In

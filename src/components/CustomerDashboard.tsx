@@ -6,6 +6,7 @@ import { useChoyFood } from "../context/SupabaseContext";
 import { ensureSupabaseClient } from "../lib/supabase";
 import { OrderStatusTracker } from "./OrderStatusTracker";
 import { ChoyRewardsSection } from "./ChoyRewardsSection";
+import { StorefrontDashboard } from "./StorefrontDashboard";
 import {
   Bell,
   BookOpen,
@@ -58,13 +59,14 @@ export type CustomerTab =
   | "support";
 
 interface CustomerDashboardProps {
-  onAddToCart: (dish: Dish) => void;
+  onAddToCart: (dish: Dish, qty?: number, choiceLabel?: string) => void;
   onReorderOrder: (order: Order) => void;
   onOpenKyc: () => void;
   onApplyRewardCode?: (code: string) => void;
   requestedTab?: CustomerTab;
   tabRequestSeq?: number;
   onTabChange?: (tab: CustomerTab) => void;
+  requestedStore?: { name: string; dish?: Dish | null; seq: number } | null;
 }
 
 const SALE_GROUPS: ("All" | SaleGroup)[] = [
@@ -84,6 +86,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   requestedTab,
   tabRequestSeq,
   onTabChange,
+  requestedStore,
 }) => {
   const {
     authUser,
@@ -100,7 +103,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     promos,
     validatePromoCode,
     submitSupportTicket,
-    loginWithGoogle,
+    openAuthModal,
     pushToast,
     cmsSettings,
     openAskChoy,
@@ -367,7 +370,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
     try {
       const ref = await submitSupportTicket({
         fullName: profile?.displayName || authUser?.displayName || "ChoyFood Customer",
-        contact: topUpContact || authUser?.email || "0917-000-0000",
+        contact: topUpContact || authUser?.email || "",
         category: "Choy Wallet Top-Up Request",
         message: `Top-Up Request: ₱${numericAmount.toFixed(2)} non-withdrawable food credits · GCash Ref: ${topUpGcashRef.trim()} · Account UID: ${authUser?.uid || "guest"}`,
       });
@@ -382,16 +385,43 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
   const [activeCustomerTab, setActiveCustomerTab] = useState<CustomerTab>(
     requestedTab || "explore"
   );
+  const [activeStorefront, setActiveStorefront] = useState<{
+    storeName: string;
+    dish: Dish | null;
+  } | null>(
+    requestedStore?.name
+      ? { storeName: requestedStore.name, dish: requestedStore.dish || null }
+      : null
+  );
 
   useEffect(() => {
     if (requestedTab) {
       setActiveCustomerTab(requestedTab);
+      setActiveStorefront(null);
     }
   }, [requestedTab, tabRequestSeq]);
 
+  useEffect(() => {
+    if (requestedStore?.name) {
+      setActiveCustomerTab("explore");
+      setActiveStorefront({
+        storeName: requestedStore.name,
+        dish: requestedStore.dish || null,
+      });
+    }
+  }, [requestedStore?.name, requestedStore?.dish, requestedStore?.seq]);
+
   const handleSelectCustomerTab = (nextTab: CustomerTab) => {
     setActiveCustomerTab(nextTab);
+    setActiveStorefront(null);
     onTabChange?.(nextTab);
+  };
+
+  const openStorefront = (storeName: string, dish: Dish | null = null) => {
+    setActiveCustomerTab("explore");
+    onTabChange?.("explore");
+    setActiveStorefront({ storeName, dish });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleRefreshOrderHistory = async () => {
@@ -480,7 +510,20 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
 
   return (
     <div className="space-y-8">
-      {activeCustomerTab === "explore" && (
+      {activeCustomerTab === "explore" && activeStorefront && (
+        <StorefrontDashboard
+          storeName={activeStorefront.storeName}
+          dishes={dishes}
+          initialDish={activeStorefront.dish}
+          storeStatus={cmsSettings.storeStatuses[activeStorefront.storeName] || "open"}
+          storePermits={cmsSettings.storePermits[activeStorefront.storeName]}
+          onBack={() => setActiveStorefront(null)}
+          onAddToCart={onAddToCart}
+          onLikeDish={likeDish}
+        />
+      )}
+
+      {activeCustomerTab === "explore" && !activeStorefront && (
           <div className="space-y-8">
       {/* Moving Marquee Promo Banner */}
       {promoVisible && (
@@ -582,7 +625,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
           <div className="space-y-0.5">
             <p className="text-xs text-stone-500">Choy Wallet · Non-Withdrawable</p>
             <p className="font-display text-2xl font-bold text-[#1C1917] tabular-nums">
-              ₱{(profile?.walletBalance ?? 150).toFixed(2)}
+              ₱{(profile?.walletBalance ?? 0).toFixed(2)}
             </p>
             <p className="text-xs text-stone-500">
               {authUser
@@ -593,7 +636,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
           <button
             onClick={() => {
               if (!authUser) {
-                loginWithGoogle();
+                openAuthModal("customer");
                 return;
               }
               setTopUpTicketRef(null);
@@ -623,7 +666,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
             <CheckCircle2 className="w-6 h-6 text-[#1F7A4C] shrink-0" />
           ) : (
             <button
-              onClick={authUser ? handleActivatePro : loginWithGoogle}
+              onClick={() => (authUser ? handleActivatePro() : openAuthModal("customer"))}
               disabled={activatingPro}
               className="inline-flex items-center gap-1.5 bg-[#E08E00] hover:bg-amber-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
             >
@@ -639,7 +682,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
             <p className="font-display text-base font-bold text-[#1C1917] capitalize">
               {profile?.kycStatus || "Unverified"}
             </p>
-            <p className="text-xs text-stone-500">Encrypted Admin-only ID protection</p>
+            <p className="text-xs text-stone-500">Required before placing orders</p>
           </div>
           <button
             onClick={onOpenKyc}
@@ -651,14 +694,54 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
         </div>
       </section>
 
+      {authUser && profile?.kycStatus !== "verified" && (
+        <section className="rounded-2xl border border-amber-300 bg-amber-50 px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-[#D12D11] shrink-0 mt-0.5" />
+            <div className="space-y-0.5 text-xs text-amber-950">
+              <p className="font-bold text-sm">
+                {profile?.kycStatus === "pending"
+                  ? "Verification Submitted — Pending Super Admin Approval"
+                  : "Verification (KYC) Required Before Ordering"}
+              </p>
+              <p className="text-amber-900">
+                {profile?.kycStatus === "pending"
+                  ? "You can continue browsing menus while our Super Admin reviews your ID. Ordering unlocks automatically once approved."
+                  : "Your customer account is active for browsing. Complete your Verification (KYC) form to place food orders."}
+              </p>
+            </div>
+          </div>
+          {profile?.kycStatus !== "pending" && (
+            <button
+              type="button"
+              onClick={onOpenKyc}
+              className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-bold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap shrink-0"
+            >
+              Fill Verification (KYC)
+            </button>
+          )}
+        </section>
+      )}
+
       {/* Live 7-Step Order Tracker */}
       <section className="bg-white border border-stone-200 rounded-2xl p-5 sm:p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <p className="text-xs text-stone-500">
-              {myActiveOrder
-                ? `Live 7-Step Order Tracking · ${myActiveOrder.orderNumber} · ${myActiveOrder.storeName}`
-                : "Live 7-Step Order Tracking · Ready for your next meal"}
+              {myActiveOrder ? (
+                <>
+                  Live 7-Step Order Tracking · {myActiveOrder.orderNumber} ·{" "}
+                  <button
+                    type="button"
+                    onClick={() => openStorefront(myActiveOrder.storeName)}
+                    className="font-semibold text-[#D12D11] hover:underline"
+                  >
+                    {myActiveOrder.storeName}
+                  </button>
+                </>
+              ) : (
+                "Live 7-Step Order Tracking · Ready for your next meal"
+              )}
             </p>
             <h2 className="font-display text-lg font-bold text-[#1C1917] mt-0.5">
               {myActiveOrder
@@ -898,6 +981,48 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
           </div>
         </div>
 
+        {/* Clickable Partner Storefronts Directory Strip */}
+        {storeOptions.filter((s) => s !== "All").length > 0 && (
+          <div className="bg-white border border-stone-200 rounded-2xl p-4 sm:p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Store className="w-4 h-4 text-[#D12D11]" />
+                <h2 className="font-display text-sm sm:text-base font-bold text-[#1C1917]">
+                  Partner Storefronts — Tap a Kitchen to Open Menu
+                </h2>
+              </div>
+              <span className="text-[11px] text-stone-500">
+                Every store has its own dashboard &amp; food choices
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {storeOptions
+                .filter((s) => s !== "All")
+                .map((storeName) => {
+                  const count = dishes.filter((d) => d.storeName === storeName).length;
+                  const status = cmsSettings.storeStatuses[storeName] || "open";
+                  return (
+                    <button
+                      key={storeName}
+                      type="button"
+                      onClick={() => openStorefront(storeName, null)}
+                      className="inline-flex items-center gap-2 bg-stone-50 hover:bg-amber-50 border border-stone-200 hover:border-[#D12D11]/50 text-[#1C1917] hover:text-[#D12D11] text-xs font-semibold px-3.5 py-2 rounded-xl transition-colors"
+                    >
+                      <Store className="w-3.5 h-3.5 text-[#D12D11] shrink-0" />
+                      <span>{storeName}</span>
+                      <span className="text-[10px] font-mono bg-white border border-stone-200 text-stone-600 px-1.5 py-0.5 rounded tabular-nums">
+                        {count}
+                      </span>
+                      {status === "coming_soon" && (
+                        <span className="text-[10px] font-bold text-amber-700">Soon</span>
+                      )}
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        )}
+
         {/* Uniform 3-Column Storefront Product Grid */}
         {filteredDishes.length === 0 ? (
           <div
@@ -932,7 +1057,8 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
             {filteredDishes.map((dish) => (
               <article
                 key={dish.id}
-                className="group bg-white border border-stone-200 rounded-2xl overflow-hidden flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-md transition-all duration-150"
+                onClick={() => openStorefront(dish.storeName, dish)}
+                className="group cursor-pointer bg-white border border-stone-200 hover:border-[#D12D11]/40 rounded-2xl overflow-hidden flex flex-col justify-between hover:-translate-y-0.5 hover:shadow-md transition-all duration-150"
               >
                 <div>
                   <div className="aspect-[4/3] bg-stone-100 relative overflow-hidden">
@@ -943,19 +1069,38 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                       className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                     />
                     <button
-                      onClick={() => likeDish(dish)}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        likeDish(dish);
+                      }}
                       aria-label={`Favorite ${dish.name}`}
                       className="absolute top-3 right-3 bg-white/95 hover:bg-white text-stone-600 hover:text-[#D12D11] p-2 rounded-lg border border-stone-200 transition-colors"
                     >
                       <Heart className="w-4 h-4" />
                     </button>
+                    <span className="absolute bottom-2.5 left-2.5 bg-black/65 backdrop-blur-xs text-white text-[10px] font-semibold px-2.5 py-1 rounded-md opacity-90 group-hover:bg-[#D12D11] transition-colors">
+                      Tap for store &amp; choices
+                    </span>
                   </div>
 
                   <div className="p-5 space-y-2">
-                    <p className="text-xs text-stone-500">
-                      {dish.storeName} · {dish.saleGroup}
-                    </p>
-                    <h3 className="font-display text-base font-bold text-[#1C1917] leading-snug">
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openStorefront(dish.storeName, null);
+                        }}
+                        className="inline-flex items-center gap-1 font-semibold text-[#D12D11] hover:underline"
+                      >
+                        <Store className="w-3 h-3" />
+                        <span>{dish.storeName}</span>
+                      </button>
+                      <span>·</span>
+                      <span>{dish.saleGroup}</span>
+                    </div>
+                    <h3 className="font-display text-base font-bold text-[#1C1917] group-hover:text-[#D12D11] transition-colors leading-snug">
                       {dish.name}
                     </h3>
                     <p className="text-xs text-stone-600 leading-relaxed line-clamp-2">
@@ -972,7 +1117,11 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                     <p className="text-xs text-stone-500 tabular-nums">{dish.likes} favorites</p>
                   </div>
                   <button
-                    onClick={() => onAddToCart(dish)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onAddToCart(dish, 1);
+                    }}
                     className="inline-flex items-center gap-1.5 bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap shrink-0"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -1010,7 +1159,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <p className="font-mono text-xs font-bold text-[#1C1917]">
-                        {order.orderNumber} · {order.storeName} ·{" "}
+                        {order.orderNumber} ·{" "}
+                        <button
+                          type="button"
+                          onClick={() => openStorefront(order.storeName)}
+                          className="text-[#D12D11] hover:underline font-sans font-bold"
+                        >
+                          {order.storeName}
+                        </button>{" "}
+                        ·{" "}
                         <span
                           className={
                             order.status === "cancelled"
@@ -1210,12 +1367,12 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
           <div className="p-6 bg-amber-50 border border-amber-200 rounded-2xl flex items-center justify-between gap-4">
             <div>
               <p className="text-xs text-amber-900 font-semibold">Live Supabase Balance</p>
-              <p className="font-display text-3xl font-extrabold text-amber-950 tabular-nums">₱{(profile?.walletBalance ?? 150).toFixed(2)}</p>
+              <p className="font-display text-3xl font-extrabold text-amber-950 tabular-nums">₱{(profile?.walletBalance ?? 0).toFixed(2)}</p>
               <p className="text-[11px] text-amber-800 mt-0.5">Synced securely with users/{authUser?.uid || "guest"}</p>
             </div>
             <button
               onClick={() => {
-                if (!authUser) { loginWithGoogle(); return; }
+                if (!authUser) { openAuthModal("customer"); return; }
                 setIsTopUpOpen(true);
               }}
               className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-5 py-2.5 rounded-lg shrink-0"
@@ -1234,7 +1391,14 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                   <div key={order.id} className="p-3.5 flex items-center justify-between gap-3 text-xs">
                     <div className="space-y-0.5">
                       <p className="font-mono font-bold text-[#1C1917]">
-                        {order.orderNumber} · {order.storeName}
+                        {order.orderNumber} ·{" "}
+                        <button
+                          type="button"
+                          onClick={() => openStorefront(order.storeName)}
+                          className="text-[#D12D11] hover:underline font-sans font-bold"
+                        >
+                          {order.storeName}
+                        </button>
                       </p>
                       <p className="text-stone-500">
                         Paid via {order.paymentMethod} · Status: <span className="capitalize">{order.status}</span>
@@ -1424,10 +1588,10 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
               </p>
               <button
                 type="button"
-                onClick={loginWithGoogle}
+                onClick={() => openAuthModal("customer")}
                 className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors"
               >
-                Sign In
+                Sign In / Register
               </button>
             </div>
           ) : (
@@ -1439,7 +1603,15 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                   <div className="space-y-2.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="font-display text-sm font-bold text-[#1C1917]">
-                        Live Delivery Tracker · {myActiveOrder.orderNumber} ({myActiveOrder.storeName})
+                        Live Delivery Tracker · {myActiveOrder.orderNumber} (
+                        <button
+                          type="button"
+                          onClick={() => openStorefront(myActiveOrder.storeName)}
+                          className="text-[#D12D11] hover:underline"
+                        >
+                          {myActiveOrder.storeName}
+                        </button>
+                        )
                       </h3>
                       <span className="text-[11px] font-mono text-[#1F7A4C] font-semibold">
                         Updating automatically via Supabase Realtime
@@ -1556,9 +1728,13 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                               <span className="font-mono text-xs font-extrabold text-[#1C1917] bg-white px-2 py-0.5 rounded border border-stone-200">
                                 {order.orderNumber}
                               </span>
-                              <span className="text-xs font-semibold text-stone-800">
+                              <button
+                                type="button"
+                                onClick={() => openStorefront(order.storeName)}
+                                className="text-xs font-semibold text-[#D12D11] hover:underline"
+                              >
                                 {order.storeName}
-                              </span>
+                              </button>
                               <span
                                 className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
                                   order.status === "delivered"
@@ -1976,7 +2152,7 @@ export const CustomerDashboard: React.FC<CustomerDashboardProps> = ({
                     required
                     value={topUpContact}
                     onChange={(e) => setTopUpContact(e.target.value)}
-                    placeholder={authUser?.email || "0917 000 0000"}
+                    placeholder={authUser?.email || "09XX XXX XXXX"}
                     className="w-full text-sm px-3.5 py-2 rounded-lg border border-stone-300"
                   />
                 </div>

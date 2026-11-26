@@ -104,6 +104,8 @@ export interface Dish {
   name: string;
   description: string;
   price: number;
+  storePrice?: number;
+  adminMarkup?: number;
   saleGroup: SaleGroup;
   storeName: string;
   storeOwnerId: string;
@@ -118,6 +120,7 @@ export interface Dish {
 export interface CartItem {
   dish: Dish;
   qty: number;
+  choiceLabel?: string;
 }
 
 export interface OrderItemSummary {
@@ -248,6 +251,7 @@ export interface PlatformCmsSettings {
   storeStatuses: Record<string, StoreOperatingStatus>;
   storePermits: Record<string, StorePermitChecklist>;
   dishApprovals: Record<string, DishApprovalStatus>;
+  dishMarkups?: Record<string, { storePrice: number; adminMarkup: number }>;
   donationCampaigns: DonationCampaign[];
   riderShiftAssignments: Record<string, string>;
 }

@@ -64,6 +64,7 @@ export const AdminDashboard: React.FC = () => {
     resolveSupportTicket,
     dismissActivityLog,
     runSystemCleaner,
+    clearOperationalDemoData,
     seedCatalogToSupabase,
     supabaseProjectLabel,
     pushToast,
@@ -105,9 +106,12 @@ export const AdminDashboard: React.FC = () => {
   >("overview");
 
   const [cleaning, setCleaning] = useState(false);
+  const [wipingDemo, setWipingDemo] = useState(false);
+  const [confirmWipeDemo, setConfirmWipeDemo] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [dishMarkupDrafts, setDishMarkupDrafts] = useState<Record<string, string>>({});
 
   // Promo creator state
   const [newPromoCode, setNewPromoCode] = useState("");
@@ -168,9 +172,9 @@ export const AdminDashboard: React.FC = () => {
     .filter((o) => o.paymentMethod === "ChoyWallet")
     .reduce((sum, o) => sum + o.totalAmount, 0);
 
-  const totalRevenue = 148920 + liveOrderRevenue;
-  const totalOrdersCount = 1492 + activeOrders.length;
-  const totalLikes = dishes.reduce((sum, d) => sum + d.likes, 0) + 2504;
+  const totalRevenue = liveOrderRevenue;
+  const totalOrdersCount = activeOrders.length;
+  const totalLikes = dishes.reduce((sum, d) => sum + d.likes, 0);
   const pendingKycCount = kycRecords.filter((k) => k.status === "pending").length;
   const openTicketsCount = supportTickets.filter((t) => t.status === "open").length;
 
@@ -198,6 +202,20 @@ export const AdminDashboard: React.FC = () => {
       await runSystemCleaner();
     } finally {
       setCleaning(false);
+    }
+  };
+
+  const handleClearDemoData = async () => {
+    if (!confirmWipeDemo) {
+      setConfirmWipeDemo(true);
+      return;
+    }
+    setWipingDemo(true);
+    try {
+      await clearOperationalDemoData();
+      setConfirmWipeDemo(false);
+    } finally {
+      setWipingDemo(false);
     }
   };
 
@@ -310,10 +328,25 @@ export const AdminDashboard: React.FC = () => {
           <button
             onClick={handleCleaner}
             disabled={!isAdmin || cleaning}
+            className="inline-flex items-center gap-1.5 bg-[#1E293B] hover:bg-slate-700 disabled:opacity-50 text-slate-200 border border-[#334155] text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-amber-400" />
+            <span>{cleaning ? "Cleaning..." : "Clear Logs"}</span>
+          </button>
+          <button
+            onClick={handleClearDemoData}
+            disabled={!isAdmin || wipingDemo}
+            onBlur={() => setConfirmWipeDemo(false)}
             className="inline-flex items-center gap-1.5 bg-[#D12D11] hover:bg-[#A61F09] disabled:opacity-50 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            <span>{cleaning ? "Cleaning..." : "Run System Cleaner"}</span>
+            <span>
+              {wipingDemo
+                ? "Wiping Ledger..."
+                : confirmWipeDemo
+                ? "Confirm Wipe All Test Data"
+                : "Clear All Demo Data"}
+            </span>
           </button>
         </div>
       </header>
@@ -1303,13 +1336,13 @@ export const AdminDashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Store Menu Dish Approval Queue */}
+              {/* Store Menu Dish Approval Queue & Admin Markup Pricing */}
               <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="font-display text-lg font-bold text-white">Store Menu Dish Approval Queue</h3>
+                    <h3 className="font-display text-lg font-bold text-white">Store Menu Dish Approval &amp; Markup Queue</h3>
                     <p className="text-xs text-slate-400">
-                      Dishes submitted by partner stores remain hidden from customers until approved here.
+                      Dishes or price updates posted by stores stay hidden from customers until Admin sets any markup price and approves them.
                     </p>
                   </div>
                   <span className="font-mono text-xs text-amber-300">
@@ -1318,40 +1351,83 @@ export const AdminDashboard: React.FC = () => {
                 </div>
 
                 <div className="divide-y divide-[#334155] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
-                  {allDishes.map((d) => {
-                    const approval = d.approvalStatus || "approved";
-                    return (
-                      <div key={d.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                        <div>
-                          <p className="font-bold text-white">
-                            {d.name} <span className="font-mono text-amber-300">₱{d.price.toFixed(2)}</span>
-                          </p>
-                          <p className="text-slate-400">
-                            {d.storeName} · {d.saleGroup} · Status:{" "}
-                            <span className="capitalize font-semibold text-white">{approval}</span>
-                          </p>
+                  {[...allDishes]
+                    .sort((a, b) => {
+                      const rank = (s?: string) => (s === "pending" ? 0 : s === "rejected" ? 2 : 1);
+                      return rank(a.approvalStatus) - rank(b.approvalStatus);
+                    })
+                    .map((d) => {
+                      const approval = d.approvalStatus || "approved";
+                      const storeBasePrice = d.storePrice ?? d.price;
+                      const savedMarkup = d.adminMarkup ?? 0;
+                      const draftVal =
+                        dishMarkupDrafts[d.id] ?? (savedMarkup > 0 ? String(savedMarkup) : "");
+                      const parsedMarkup = Math.max(0, Math.round((Number(draftVal) || 0) * 100) / 100);
+                      const customerPrice = Math.round((storeBasePrice + parsedMarkup) * 100) / 100;
+                      const markupChanged = parsedMarkup !== savedMarkup;
+                      return (
+                        <div key={d.id} className="p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-white flex flex-wrap items-center gap-2">
+                              <span>{d.name}</span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] uppercase font-mono ${
+                                  approval === "approved"
+                                    ? "bg-emerald-500/20 text-emerald-300"
+                                    : approval === "rejected"
+                                    ? "bg-rose-500/20 text-rose-300"
+                                    : "bg-amber-500/20 text-amber-300"
+                                }`}
+                              >
+                                {approval}
+                              </span>
+                            </p>
+                            <p className="text-slate-400">
+                              {d.storeName} · {d.saleGroup} · Store Price:{" "}
+                              <span className="font-mono text-slate-200">₱{storeBasePrice.toFixed(2)}</span>
+                              {" · "}Customer Price:{" "}
+                              <span className="font-mono font-bold text-amber-300">₱{customerPrice.toFixed(2)}</span>
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <label className="flex items-center gap-1.5 bg-[#0B1120] border border-[#334155] rounded-lg px-2.5 py-1 text-slate-300">
+                              <span className="text-[11px] text-slate-400">+Markup ₱</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={10000}
+                                step="1"
+                                disabled={!isAdmin}
+                                value={draftVal}
+                                placeholder="0"
+                                onChange={(e) =>
+                                  setDishMarkupDrafts((prev) => ({ ...prev, [d.id]: e.target.value }))
+                                }
+                                aria-label={`Admin markup for ${d.name}`}
+                                className="w-16 bg-transparent text-white font-mono text-right focus:outline-none tabular-nums"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              disabled={!isAdmin || (approval === "approved" && !markupChanged)}
+                              onClick={() => approveDish(d.id, "approved", parsedMarkup)}
+                              className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg whitespace-nowrap"
+                            >
+                              {approval === "approved" ? "Update Markup" : "Approve & Post"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!isAdmin || approval === "rejected"}
+                              onClick={() => approveDish(d.id, "rejected", parsedMarkup)}
+                              className="bg-slate-700 hover:bg-rose-600 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg"
+                            >
+                              Reject
+                            </button>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <button
-                            type="button"
-                            disabled={!isAdmin || approval === "approved"}
-                            onClick={() => approveDish(d.id, "approved")}
-                            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            disabled={!isAdmin || approval === "rejected"}
-                            onClick={() => approveDish(d.id, "rejected")}
-                            className="bg-slate-700 hover:bg-rose-600 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
                 </div>
               </div>
             </div>
@@ -1746,7 +1822,7 @@ export const AdminDashboard: React.FC = () => {
                             <p className="font-bold text-white text-sm">
                               {r.displayName} · <span className="text-emerald-400 font-mono">{batch}</span>
                             </p>
-                            <p className="text-slate-400 font-mono">Rider {r.riderCode || "JC389"}</p>
+                            <p className="text-slate-400 font-mono">Rider {r.riderCode || "UNASSIGNED"}</p>
                           </div>
                           <select
                             value={assigned}
@@ -1866,9 +1942,9 @@ export const AdminDashboard: React.FC = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <D3DeliveryVolumeChart orders={orders} />
-                <D3PeakHoursChart />
+                <D3PeakHoursChart orders={orders} />
               </div>
-              <D3DurationChart />
+              <D3DurationChart orders={orders} />
             </div>
           )}
         </main>
@@ -1891,23 +1967,36 @@ const D3DeliveryVolumeChart: React.FC<{ orders: any[] }> = ({ orders }) => {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
-    const data = [
-      { day: "Mon", count: 42 + (orders.length % 5) },
-      { day: "Tue", count: 58 },
-      { day: "Wed", count: 65 },
-      { day: "Thu", count: 74 },
-      { day: "Fri", count: 96 },
-      { day: "Sat", count: 120 + orders.length },
-      { day: "Sun", count: 110 },
-    ];
+    const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const countsByDay: Record<string, number> = {
+      Mon: 0,
+      Tue: 0,
+      Wed: 0,
+      Thu: 0,
+      Fri: 0,
+      Sat: 0,
+      Sun: 0,
+    };
+    for (const o of orders) {
+      if (o.status === "cancelled") continue;
+      const d = o.createdAt ? new Date(o.createdAt) : null;
+      const label = d && !Number.isNaN(d.getTime()) ? dayLabels[d.getDay()] : "Mon";
+      countsByDay[label] = (countsByDay[label] || 0) + 1;
+    }
+
+    const data = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({
+      day,
+      count: countsByDay[day] || 0,
+    }));
 
     const x = d3.scaleBand()
       .domain(data.map(d => d.day))
       .range([0, innerWidth])
       .padding(0.2);
 
+    const maxCount = d3.max(data, d => d.count) || 0;
     const y = d3.scaleLinear()
-      .domain([0, d3.max(data, d => d.count) || 140])
+      .domain([0, Math.max(5, maxCount)])
       .nice()
       .range([innerHeight, 0]);
 
@@ -1951,7 +2040,7 @@ const D3DeliveryVolumeChart: React.FC<{ orders: any[] }> = ({ orders }) => {
   );
 };
 
-const D3PeakHoursChart: React.FC = () => {
+const D3PeakHoursChart: React.FC<{ orders: any[] }> = ({ orders }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -1965,22 +2054,37 @@ const D3PeakHoursChart: React.FC = () => {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
-    const data = [
-      { hour: "10 AM", orders: 15 },
-      { hour: "12 PM", orders: 68 },
-      { hour: "2 PM", orders: 32 },
-      { hour: "5 PM", orders: 45 },
-      { hour: "7 PM", orders: 95 },
-      { hour: "9 PM", orders: 50 },
-    ];
+    const buckets: Record<string, number> = {
+      "10 AM": 0,
+      "12 PM": 0,
+      "2 PM": 0,
+      "5 PM": 0,
+      "7 PM": 0,
+      "9 PM": 0,
+    };
+
+    for (const o of orders) {
+      if (o.status === "cancelled") continue;
+      const d = o.createdAt ? new Date(o.createdAt) : null;
+      const hr = d && !Number.isNaN(d.getTime()) ? d.getHours() : 12;
+      if (hr < 11) buckets["10 AM"] += 1;
+      else if (hr < 14) buckets["12 PM"] += 1;
+      else if (hr < 17) buckets["2 PM"] += 1;
+      else if (hr < 19) buckets["5 PM"] += 1;
+      else if (hr < 21) buckets["7 PM"] += 1;
+      else buckets["9 PM"] += 1;
+    }
+
+    const data = Object.entries(buckets).map(([hour, count]) => ({ hour, orders: count }));
 
     const x = d3.scaleBand()
       .domain(data.map(d => d.hour))
       .range([0, innerWidth])
       .padding(0.3);
 
+    const maxPeak = d3.max(data, d => d.orders) || 0;
     const y = d3.scaleLinear()
-      .domain([0, 100])
+      .domain([0, Math.max(5, maxPeak)])
       .nice()
       .range([innerHeight, 0]);
 
@@ -2012,7 +2116,7 @@ const D3PeakHoursChart: React.FC = () => {
       .style("font-size", "10px");
 
     svg.selectAll(".domain, .tick line").attr("stroke", "#334155");
-  }, []);
+  }, [orders]);
 
   return (
     <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-5 space-y-3">
@@ -2024,7 +2128,7 @@ const D3PeakHoursChart: React.FC = () => {
   );
 };
 
-const D3DurationChart: React.FC = () => {
+const D3DurationChart: React.FC<{ orders: any[] }> = ({ orders }) => {
   const svgRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
@@ -2038,10 +2142,40 @@ const D3DurationChart: React.FC = () => {
     const innerWidth = width - margin.left - margin.right;
     const innerHeight = height - margin.top - margin.bottom;
 
+    const tierStats: Record<string, { sum: number; count: number }> = {
+      "0-2km": { sum: 0, count: 0 },
+      "2-5km": { sum: 0, count: 0 },
+      "5-10km": { sum: 0, count: 0 },
+    };
+
+    for (const o of orders) {
+      if (o.status !== "delivered") continue;
+      const tierKey = tierStats[o.distanceTier] ? o.distanceTier : "0-2km";
+      const startMs = o.createdAt ? new Date(o.createdAt).getTime() : NaN;
+      const endMs = o.updatedAt ? new Date(o.updatedAt).getTime() : NaN;
+      const mins =
+        Number.isFinite(startMs) && Number.isFinite(endMs) && endMs >= startMs
+          ? Math.max(1, Math.round((endMs - startMs) / 60000))
+          : 0;
+      if (mins > 0) {
+        tierStats[tierKey].sum += mins;
+        tierStats[tierKey].count += 1;
+      }
+    }
+
     const data = [
-      { tier: "0-2 km", mins: 17 },
-      { tier: "2-5 km", mins: 26 },
-      { tier: "5-10 km", mins: 39 },
+      {
+        tier: "0-2 km",
+        mins: tierStats["0-2km"].count > 0 ? Math.round(tierStats["0-2km"].sum / tierStats["0-2km"].count) : 0,
+      },
+      {
+        tier: "2-5 km",
+        mins: tierStats["2-5km"].count > 0 ? Math.round(tierStats["2-5km"].sum / tierStats["2-5km"].count) : 0,
+      },
+      {
+        tier: "5-10 km",
+        mins: tierStats["5-10km"].count > 0 ? Math.round(tierStats["5-10km"].sum / tierStats["5-10km"].count) : 0,
+      },
     ];
 
     const y = d3.scaleBand()
@@ -2049,8 +2183,9 @@ const D3DurationChart: React.FC = () => {
       .range([0, innerHeight])
       .padding(0.3);
 
+    const maxMins = d3.max(data, d => d.mins) || 0;
     const x = d3.scaleLinear()
-      .domain([0, 50])
+      .domain([0, Math.max(30, maxMins)])
       .nice()
       .range([0, innerWidth]);
 
@@ -2082,7 +2217,7 @@ const D3DurationChart: React.FC = () => {
       .style("font-size", "10px");
 
     svg.selectAll(".domain, .tick line").attr("stroke", "#334155");
-  }, []);
+  }, [orders]);
 
   return (
     <div className="bg-[#1E293B] border border-[#334155] rounded-2xl p-5 space-y-3">

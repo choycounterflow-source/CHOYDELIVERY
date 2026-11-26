@@ -70,20 +70,25 @@ const ADMIN_SESSION_SECRET =
   process.env.ADMIN_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const SUPER_ADMIN_EMAIL = "choyjiez07@gmail.com";
 const OPS_ADMIN_EMAIL = "admin@choyfood.ph";
+const STORE_JOLLIBEE_EMAIL = "jollibee.centro@choyfood.ph";
+const STORE_JOLLIBEE_NAME = "Jollibee / Centro";
+const STORE_JOLLIBEE_UID = "store_jollibee_surigao";
 const TOKEN_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-type ServerAdminRole = "super_admin" | "admin";
+type ServerAuthSlot = "super_admin" | "admin" | "store_jollibee_centro";
+type TokenRole = "super_admin" | "admin" | "store";
 
-interface ClaimedAdminRecord {
-  mobile: string;
+interface ClaimedPinRecord {
+  identifier: string;
   saltHex: string;
   hashHex: string;
   claimedAt: string;
 }
 
-const claimedAdmins: Record<ServerAdminRole, ClaimedAdminRecord | null> = {
+const claimedAccounts: Record<ServerAuthSlot, ClaimedPinRecord | null> = {
   super_admin: null,
   admin: null,
+  store_jollibee_centro: null,
 };
 const revokedTokenIds = new Set<string>();
 const loginAttemptMap = new Map<string, { count: number; resetAt: number }>();
@@ -92,9 +97,23 @@ function normalizeMobile(raw: string): string {
   return String(raw || "").replace(/[^0-9]/g, "");
 }
 
+function normalizeStoreIdentifier(raw: string): string {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .slice(0, 60);
+}
+
 function maskMobile(mobile: string): string {
   if (mobile.length < 7) return "••••";
   return `${mobile.slice(0, 4)}••••${mobile.slice(-3)}`;
+}
+
+function maskStoreIdentifier(identifier: string): string {
+  if (/^[0-9]{7,}$/.test(identifier)) return maskMobile(identifier);
+  if (identifier.length <= 4) return "••••";
+  return `${identifier.slice(0, 4)}••••${identifier.slice(-2)}`;
 }
 
 function timingSafeStringEqual(a: string, b: string): boolean {
@@ -121,26 +140,65 @@ function verifyScryptPin(pin: string, saltHex: string, expectedHashHex: string):
   return crypto.timingSafeEqual(a, b);
 }
 
-function getEnvCredsForRole(role: ServerAdminRole): { envMobile: string; envPin: string } {
-  if (role === "super_admin") {
+function getEnvCredsForSlot(slot: ServerAuthSlot): { envIdentifier: string; envPin: string } {
+  if (slot === "super_admin") {
     return {
-      envMobile: normalizeMobile(process.env.SUPER_ADMIN_MOBILE || ""),
+      envIdentifier: normalizeMobile(process.env.SUPER_ADMIN_MOBILE || ""),
       envPin: (process.env.SUPER_ADMIN_PIN || "").trim(),
     };
   }
+  if (slot === "admin") {
+    return {
+      envIdentifier: normalizeMobile(process.env.ADMIN_MOBILE || ""),
+      envPin: (process.env.ADMIN_PIN || "").trim(),
+    };
+  }
   return {
-    envMobile: normalizeMobile(process.env.ADMIN_MOBILE || ""),
-    envPin: (process.env.ADMIN_PIN || "").trim(),
+    envIdentifier: normalizeStoreIdentifier(process.env.STORE_JOLLIBEE_MOBILE || ""),
+    envPin: (process.env.STORE_JOLLIBEE_PIN || "").trim(),
   };
 }
 
-function issueAdminBearerToken(mobile: string, role: ServerAdminRole): string {
+function getAccountMetaForSlot(slot: ServerAuthSlot, identifier: string) {
+  if (slot === "super_admin") {
+    return {
+      uid: "super-admin",
+      email: SUPER_ADMIN_EMAIL,
+      displayName: "Super Admin",
+      role: "super_admin" as TokenRole,
+      storeName: "",
+      mobile: identifier,
+    };
+  }
+  if (slot === "admin") {
+    return {
+      uid: "ops-admin",
+      email: OPS_ADMIN_EMAIL,
+      displayName: "Admin Operations",
+      role: "admin" as TokenRole,
+      storeName: "",
+      mobile: identifier,
+    };
+  }
+  return {
+    uid: STORE_JOLLIBEE_UID,
+    email: STORE_JOLLIBEE_EMAIL,
+    displayName: STORE_JOLLIBEE_NAME,
+    role: "store" as TokenRole,
+    storeName: STORE_JOLLIBEE_NAME,
+    mobile: identifier,
+  };
+}
+
+function issueSessionBearerToken(slot: ServerAuthSlot, identifier: string): string {
+  const meta = getAccountMetaForSlot(slot, identifier);
   const payload = {
     jti: crypto.randomBytes(16).toString("hex"),
-    sub: role === "super_admin" ? "super-admin" : "ops-admin",
-    email: role === "super_admin" ? SUPER_ADMIN_EMAIL : OPS_ADMIN_EMAIL,
-    mobile,
-    role,
+    sub: meta.uid,
+    email: meta.email,
+    mobile: identifier,
+    role: meta.role,
+    storeName: meta.storeName,
     iat: Date.now(),
     exp: Date.now() + TOKEN_TTL_MS,
   };
@@ -152,12 +210,16 @@ function issueAdminBearerToken(mobile: string, role: ServerAdminRole): string {
   return `${payloadB64}.${sig}`;
 }
 
-function verifyAdminBearerToken(token: string): {
+function verifySessionBearerToken(
+  token: string,
+  allowedRoles: TokenRole[] = ["super_admin", "admin"]
+): {
   jti: string;
   sub: string;
   email: string;
   mobile: string;
-  role: ServerAdminRole;
+  role: TokenRole;
+  storeName?: string;
   exp: number;
 } | null {
   if (!token || !token.includes(".")) return null;
@@ -175,7 +237,7 @@ function verifyAdminBearerToken(token: string): {
     if (!parsed || typeof parsed !== "object") return null;
     if (typeof parsed.exp !== "number" || Date.now() > parsed.exp) return null;
     if (typeof parsed.jti !== "string" || revokedTokenIds.has(parsed.jti)) return null;
-    if (parsed.role !== "super_admin" && parsed.role !== "admin") return null;
+    if (!allowedRoles.includes(parsed.role)) return null;
     return parsed;
   } catch {
     return null;
@@ -209,22 +271,35 @@ function clearLoginAttempts(ipKey: string): void {
   loginAttemptMap.delete(ipKey);
 }
 
-function registerMobilePinAuthRoutes(prefix: string, role: ServerAdminRole, label: string) {
+function registerMobilePinAuthRoutes(prefix: string, slot: ServerAuthSlot, label: string) {
+  const isStoreSlot = slot === "store_jollibee_centro";
+
+  const parseIdentifier = (raw: unknown): string => {
+    const val = String(raw || "");
+    return isStoreSlot ? normalizeStoreIdentifier(val) : normalizeMobile(val);
+  };
+
   app.get(`${prefix}/status`, (_req, res) => {
-    const { envMobile, envPin } = getEnvCredsForRole(role);
+    const { envIdentifier, envPin } = getEnvCredsForSlot(slot);
     if (envPin) {
       return res.json({
         mode: "env",
         needsSetup: false,
-        mobileHint: envMobile ? maskMobile(envMobile) : null,
+        mobileHint: envIdentifier
+          ? isStoreSlot
+            ? maskStoreIdentifier(envIdentifier)
+            : maskMobile(envIdentifier)
+          : null,
       });
     }
-    const claimed = claimedAdmins[role];
+    const claimed = claimedAccounts[slot];
     if (claimed) {
       return res.json({
         mode: "claimed",
         needsSetup: false,
-        mobileHint: maskMobile(claimed.mobile),
+        mobileHint: isStoreSlot
+          ? maskStoreIdentifier(claimed.identifier)
+          : maskMobile(claimed.identifier),
       });
     }
     return res.json({
@@ -235,17 +310,23 @@ function registerMobilePinAuthRoutes(prefix: string, role: ServerAdminRole, labe
   });
 
   app.post(`${prefix}/setup`, (req, res) => {
-    const { envPin } = getEnvCredsForRole(role);
-    if (envPin || claimedAdmins[role]) {
+    const { envPin } = getEnvCredsForSlot(slot);
+    if (envPin || claimedAccounts[slot]) {
       return res.status(403).json({
         error: `${label} credentials are already configured. Please sign in instead.`,
       });
     }
 
-    const mobile = normalizeMobile(req.body?.mobile);
+    const identifier = parseIdentifier(req.body?.mobile);
     const pin = String(req.body?.pin || "").trim();
 
-    if (mobile.length < 10 || mobile.length > 15) {
+    if (isStoreSlot) {
+      if (identifier.length < 3 || identifier.length > 60) {
+        return res.status(400).json({
+          error: "Enter a valid store login ID or mobile number (at least 3 characters).",
+        });
+      }
+    } else if (identifier.length < 10 || identifier.length > 15) {
       return res.status(400).json({ error: "Enter a valid mobile number (10–15 digits)." });
     }
     if (pin.length < 6 || pin.length > 32) {
@@ -253,54 +334,58 @@ function registerMobilePinAuthRoutes(prefix: string, role: ServerAdminRole, labe
     }
 
     const { saltHex, hashHex } = hashPin(pin);
-    claimedAdmins[role] = {
-      mobile,
+    claimedAccounts[slot] = {
+      identifier,
       saltHex,
       hashHex,
       claimedAt: new Date().toISOString(),
     };
 
-    const token = issueAdminBearerToken(mobile, role);
+    const token = issueSessionBearerToken(slot, identifier);
+    const meta = getAccountMetaForSlot(slot, identifier);
     return res.status(201).json({
       ok: true,
       token,
-      admin: {
-        uid: role === "super_admin" ? "super-admin" : "ops-admin",
-        email: role === "super_admin" ? SUPER_ADMIN_EMAIL : OPS_ADMIN_EMAIL,
-        displayName: label,
-        mobile,
-        role,
-      },
+      admin: meta,
+      store: isStoreSlot ? meta : undefined,
     });
   });
 
   app.post(`${prefix}/login`, (req, res) => {
-    const clientIp = `${role}:${String(req.ip || req.socket.remoteAddress || "unknown")}`;
+    const clientIp = `${slot}:${String(req.ip || req.socket.remoteAddress || "unknown")}`;
     if (isRateLimited(clientIp)) {
       return res.status(429).json({
         error: "Too many failed sign-in attempts. Please wait 15 minutes and try again.",
       });
     }
 
-    const mobile = normalizeMobile(req.body?.mobile);
+    const identifier = parseIdentifier(req.body?.mobile);
     const pin = String(req.body?.pin || "").trim();
 
-    if (!mobile || !pin) {
-      return res.status(400).json({ error: "Mobile number and PIN are required." });
+    if (!identifier || !pin) {
+      return res.status(400).json({
+        error: isStoreSlot
+          ? "Store login ID/mobile and PIN are required."
+          : "Mobile number and PIN are required.",
+      });
     }
 
-    const { envMobile, envPin } = getEnvCredsForRole(role);
-    const claimed = claimedAdmins[role];
+    const { envIdentifier, envPin } = getEnvCredsForSlot(slot);
+    const claimed = claimedAccounts[slot];
     let authenticated = false;
 
     if (envPin) {
-      const mobileOk = envMobile ? timingSafeStringEqual(mobile, envMobile) : mobile.length >= 10;
+      const idOk = envIdentifier
+        ? timingSafeStringEqual(identifier, envIdentifier)
+        : isStoreSlot
+        ? identifier.length >= 3
+        : identifier.length >= 10;
       const pinOk = timingSafeStringEqual(pin, envPin);
-      authenticated = mobileOk && pinOk;
+      authenticated = idOk && pinOk;
     } else if (claimed) {
-      const mobileOk = timingSafeStringEqual(mobile, claimed.mobile);
+      const idOk = timingSafeStringEqual(identifier, claimed.identifier);
       const pinOk = verifyScryptPin(pin, claimed.saltHex, claimed.hashHex);
-      authenticated = mobileOk && pinOk;
+      authenticated = idOk && pinOk;
     } else {
       return res.status(409).json({
         error: `${label} has not been claimed yet. Complete first-run setup first.`,
@@ -310,31 +395,32 @@ function registerMobilePinAuthRoutes(prefix: string, role: ServerAdminRole, labe
 
     if (!authenticated) {
       recordFailedLogin(clientIp);
-      return res.status(401).json({ error: `Invalid ${label} mobile number or PIN.` });
+      return res.status(401).json({
+        error: isStoreSlot
+          ? `Invalid ${label} login ID or PIN.`
+          : `Invalid ${label} mobile number or PIN.`,
+      });
     }
 
     clearLoginAttempts(clientIp);
-    const token = issueAdminBearerToken(mobile, role);
+    const token = issueSessionBearerToken(slot, identifier);
+    const meta = getAccountMetaForSlot(slot, identifier);
     return res.json({
       ok: true,
       token,
-      admin: {
-        uid: role === "super_admin" ? "super-admin" : "ops-admin",
-        email: role === "super_admin" ? SUPER_ADMIN_EMAIL : OPS_ADMIN_EMAIL,
-        displayName: label,
-        mobile,
-        role,
-      },
+      admin: meta,
+      store: isStoreSlot ? meta : undefined,
     });
   });
 }
 
 registerMobilePinAuthRoutes("/api/admin", "super_admin", "Super Admin");
 registerMobilePinAuthRoutes("/api/ops-admin", "admin", "Admin Operations");
+registerMobilePinAuthRoutes("/api/store-auth", "store_jollibee_centro", STORE_JOLLIBEE_NAME);
 
 app.get("/api/admin/me", (req, res) => {
   const token = extractBearerToken(req);
-  const verified = verifyAdminBearerToken(token);
+  const verified = verifySessionBearerToken(token, ["super_admin", "admin"]);
   if (!verified) {
     return res.status(401).json({ error: "Unauthorized or expired session." });
   }
@@ -350,9 +436,28 @@ app.get("/api/admin/me", (req, res) => {
   });
 });
 
+app.get("/api/store-auth/me", (req, res) => {
+  const token = extractBearerToken(req);
+  const verified = verifySessionBearerToken(token, ["store"]);
+  if (!verified) {
+    return res.status(401).json({ error: "Unauthorized or expired store session." });
+  }
+  return res.json({
+    ok: true,
+    store: {
+      uid: verified.sub,
+      email: verified.email,
+      displayName: verified.storeName || STORE_JOLLIBEE_NAME,
+      storeName: verified.storeName || STORE_JOLLIBEE_NAME,
+      mobile: verified.mobile,
+      role: "store",
+    },
+  });
+});
+
 app.post("/api/admin/logout", (req, res) => {
   const token = extractBearerToken(req);
-  const verified = verifyAdminBearerToken(token);
+  const verified = verifySessionBearerToken(token, ["super_admin", "admin", "store"]);
   if (verified) {
     revokedTokenIds.add(verified.jti);
   }

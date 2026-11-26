@@ -51,6 +51,7 @@ export const AdminOpsDashboard: React.FC = () => {
   const [opsTab, setOpsTab] = useState<"dispatch" | "tickets" | "fleet" | "promos">("dispatch");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [dishMarkupDrafts, setDishMarkupDrafts] = useState<Record<string, string>>({});
 
   const pendingOrders = orders.filter(
     (o) => o.status !== "delivered" && o.status !== "cancelled"
@@ -573,48 +574,94 @@ export const AdminOpsDashboard: React.FC = () => {
           </div>
 
           <div className="bg-white border border-stone-200 rounded-2xl p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-display text-base font-bold text-[#1C1917]">
-                Store Menu Dish Approval Queue
-              </h3>
-              <span className="font-mono text-xs text-amber-700 font-semibold">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-display text-base font-bold text-[#1C1917]">
+                  Store Menu Dish Approval &amp; Markup Queue
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Set Admin markup (+₱) and approve store dishes or price updates before they appear on the Customer Dashboard.
+                </p>
+              </div>
+              <span className="font-mono text-xs text-amber-700 font-semibold shrink-0">
                 {pendingDishes.length} pending review
               </span>
             </div>
             <div className="divide-y divide-stone-100 text-xs">
-              {allDishes.map((d) => {
-                const approval = d.approvalStatus || "approved";
-                return (
-                  <div key={d.id} className="py-2.5 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-[#1C1917]">
-                        {d.name} · <span className="font-mono text-[#D12D11]">₱{d.price.toFixed(2)}</span>
-                      </p>
-                      <p className="text-[11px] text-stone-500">
-                        {d.storeName} · Approval: <strong className="capitalize">{approval}</strong>
-                      </p>
+              {[...allDishes]
+                .sort((a, b) => {
+                  const rank = (s?: string) => (s === "pending" ? 0 : s === "rejected" ? 2 : 1);
+                  return rank(a.approvalStatus) - rank(b.approvalStatus);
+                })
+                .map((d) => {
+                  const approval = d.approvalStatus || "approved";
+                  const storeBasePrice = d.storePrice ?? d.price;
+                  const savedMarkup = d.adminMarkup ?? 0;
+                  const draftVal =
+                    dishMarkupDrafts[d.id] ?? (savedMarkup > 0 ? String(savedMarkup) : "");
+                  const parsedMarkup = Math.max(0, Math.round((Number(draftVal) || 0) * 100) / 100);
+                  const customerPrice = Math.round((storeBasePrice + parsedMarkup) * 100) / 100;
+                  const markupChanged = parsedMarkup !== savedMarkup;
+                  return (
+                    <div key={d.id} className="py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-[#1C1917] flex flex-wrap items-center gap-2">
+                          <span>{d.name}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono uppercase ${
+                              approval === "approved"
+                                ? "bg-emerald-100 text-[#1F7A4C]"
+                                : approval === "rejected"
+                                ? "bg-rose-100 text-rose-700"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {approval}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-stone-500">
+                          {d.storeName} · Store: <span className="font-mono text-stone-700">₱{storeBasePrice.toFixed(2)}</span>
+                          {" · "}Customer: <span className="font-mono font-bold text-[#D12D11]">₱{customerPrice.toFixed(2)}</span>
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                        <label className="flex items-center gap-1 bg-stone-50 border border-stone-300 rounded-md px-2 py-1 text-stone-600">
+                          <span className="text-[11px]">+Markup ₱</span>
+                          <input
+                            type="number"
+                            min={0}
+                            max={10000}
+                            step="1"
+                            disabled={!isAdmin}
+                            value={draftVal}
+                            placeholder="0"
+                            onChange={(e) =>
+                              setDishMarkupDrafts((prev) => ({ ...prev, [d.id]: e.target.value }))
+                            }
+                            aria-label={`Admin markup for ${d.name}`}
+                            className="w-14 bg-transparent text-[#1C1917] font-mono text-right focus:outline-none tabular-nums"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          disabled={!isAdmin || (approval === "approved" && !markupChanged)}
+                          onClick={() => approveDish(d.id, "approved", parsedMarkup)}
+                          className="bg-[#1F7A4C] hover:bg-emerald-800 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded whitespace-nowrap"
+                        >
+                          {approval === "approved" ? "Update Markup" : "Approve & Post"}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!isAdmin || approval === "rejected"}
+                          onClick={() => approveDish(d.id, "rejected", parsedMarkup)}
+                          className="bg-stone-200 hover:bg-rose-600 hover:text-white disabled:opacity-40 text-stone-700 font-semibold px-3 py-1.5 rounded"
+                        >
+                          Reject
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={!isAdmin || approval === "approved"}
-                        onClick={() => approveDish(d.id, "approved")}
-                        className="bg-[#1F7A4C] hover:bg-emerald-800 disabled:opacity-40 text-white font-semibold px-3 py-1 rounded"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        type="button"
-                        disabled={!isAdmin || approval === "rejected"}
-                        onClick={() => approveDish(d.id, "rejected")}
-                        className="bg-stone-200 hover:bg-rose-600 hover:text-white disabled:opacity-40 text-stone-700 font-semibold px-3 py-1 rounded"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </div>
           </div>
         </section>

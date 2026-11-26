@@ -3,7 +3,7 @@ import { CartItem, DeliveryCoords, DistanceTier, PaymentMethod } from "../types/
 import { DISTANCE_FEES } from "../data/seedData";
 import { calculateOrderPoints } from "../lib/rewards";
 import { useChoyFood } from "../context/SupabaseContext";
-import { Award, Crosshair, Heart, MapPin, Minus, Plus, ShoppingBag, Tag, Trash2, X } from "lucide-react";
+import { Award, Crosshair, Heart, MapPin, Minus, Plus, ShieldAlert, ShoppingBag, Tag, Trash2, X } from "lucide-react";
 import { SecurePaymentModal } from "./SecurePaymentModal";
 
 interface CartDrawerProps {
@@ -12,6 +12,7 @@ interface CartDrawerProps {
   cart: CartItem[];
   onChangeQty: (dishId: string, delta: number) => void;
   onClearCart: () => void;
+  onOpenKyc: () => void;
   externalPromoCode?: string;
   externalPromoSeq?: number;
 }
@@ -43,6 +44,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   cart,
   onChangeQty,
   onClearCart,
+  onOpenKyc,
   externalPromoCode,
   externalPromoSeq,
 }) => {
@@ -51,9 +53,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
   const [distanceTier, setDistanceTier] = useState<DistanceTier>("0-2km");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
-  const [promoCode, setPromoCode] = useState("CHOY25");
-  const [deliveryAddress, setDeliveryAddress] = useState("Unit 402, Acacia Heights, Banilad, Cebu");
-  const [deliveryNote, setDeliveryNote] = useState("Leave at guardhouse lobby");
+  const [promoCode, setPromoCode] = useState("");
+  const [deliveryAddress, setDeliveryAddress] = useState("");
+  const [deliveryNote, setDeliveryNote] = useState("");
   const [tipAmount, setTipAmount] = useState<number>(0);
   const [customTipInput, setCustomTipInput] = useState<string>("");
   const [deliveryCoords, setDeliveryCoords] = useState<DeliveryCoords | null>(null);
@@ -139,7 +141,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
       const created = await placeOrder({
         items: cart.map((c) => ({
           dishId: c.dish.id,
-          name: c.dish.name,
+          name: c.choiceLabel ? `${c.dish.name} (${c.choiceLabel})` : c.dish.name,
           price: c.dish.price,
           qty: c.qty,
         })),
@@ -159,7 +161,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
         setTipAmount(0);
         setCustomTipInput("");
         if (normalizedPromo.startsWith("CHOYRW-")) {
-          setPromoCode("CHOY25");
+          setPromoCode("");
         }
         onClose();
       }
@@ -168,10 +170,39 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     }
   };
 
+  const isKycVerified = profile?.kycStatus === "verified";
+  const isKycPending = profile?.kycStatus === "pending";
+
   const handleCheckout = async () => {
     if (cart.length === 0) return;
     if (!authUser) {
       openAuthModal("customer");
+      return;
+    }
+    if (!isKycVerified) {
+      if (isKycPending) {
+        pushToast(
+          "Verification Pending Approval",
+          "Your KYC verification is awaiting Super Admin approval before you can place orders.",
+          "error"
+        );
+      } else {
+        pushToast(
+          "Verification Required",
+          "Please fill out and submit your Verification (KYC) form before placing an order.",
+          "error"
+        );
+        onClose();
+        onOpenKyc();
+      }
+      return;
+    }
+    if (deliveryAddress.trim().length < 3) {
+      pushToast(
+        "Delivery Address Required",
+        "Enter your street, barangay, or pin your delivery address before placing an order.",
+        "error"
+      );
       return;
     }
 
@@ -227,6 +258,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                         <p className="text-sm font-semibold text-[#1C1917] truncate">
                           {item.dish.name}
                         </p>
+                        {item.choiceLabel && (
+                          <p className="text-[11px] font-semibold text-[#D12D11] truncate">
+                            Choice: {item.choiceLabel}
+                          </p>
+                        )}
                         <p className="text-xs text-stone-500 font-mono tabular-nums">
                           ₱{item.dish.price.toFixed(2)} × {item.qty}
                         </p>
@@ -286,7 +322,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       <option value="GCash">GCash / PayMaya E-Wallet (Secure 3DS)</option>
                       <option value="Card">Debit / Credit Card (Stripe Tokenized)</option>
                       <option value="ChoyWallet">
-                        Choy Wallet (₱{(profile?.walletBalance ?? 150).toFixed(2)} Available)
+                        Choy Wallet (₱{(profile?.walletBalance ?? 0).toFixed(2)} Available)
                       </option>
                     </select>
                   </div>
@@ -410,6 +446,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       maxLength={240}
                       value={deliveryAddress}
                       onChange={(e) => setDeliveryAddress(e.target.value)}
+                      placeholder="Enter house #, street, barangay, city"
                       className="w-full px-3 py-2 rounded-lg border border-stone-300 bg-white text-xs"
                     />
                     <div className="flex flex-wrap gap-1.5">
@@ -495,15 +532,53 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               )}
             </div>
 
+              {authUser && !isKycVerified && (
+                <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <ShieldAlert className="w-4 h-4 text-[#D12D11] shrink-0 mt-0.5" />
+                    <div className="space-y-0.5">
+                      <p className="font-bold">
+                        {isKycPending
+                          ? "Verification Submitted (Pending Admin Approval)"
+                          : profile?.kycStatus === "rejected"
+                          ? "Verification Required (Previous Submission Rejected)"
+                          : "Verification Required Before Ordering"}
+                      </p>
+                      <p className="text-[11px] text-amber-900 leading-snug">
+                        {isKycPending
+                          ? "Ordering is disabled until a Super Admin approves your KYC submission."
+                          : "Fill out your Customer KYC Verification form first to unlock checkout."}
+                      </p>
+                    </div>
+                  </div>
+                  {!isKycPending && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onOpenKyc();
+                      }}
+                      className="w-full py-2 rounded-lg bg-[#114B22] hover:bg-emerald-900 text-white font-bold text-xs transition-colors"
+                    >
+                      Fill Verification (KYC) Now
+                    </button>
+                  )}
+                </div>
+              )}
+
             <button
               onClick={handleCheckout}
-              disabled={cart.length === 0 || submitting}
+              disabled={cart.length === 0 || submitting || (Boolean(authUser) && isKycPending)}
               className="w-full bg-[#D12D11] hover:bg-[#A61F09] disabled:bg-stone-300 disabled:text-stone-500 text-white font-semibold text-sm py-3 rounded-lg transition-colors"
             >
               {submitting
                 ? "Submitting Order..."
                 : !authUser
-                ? "Sign In to Checkout"
+                ? "Sign In / Register to Checkout"
+                : isKycPending
+                ? "Awaiting KYC Approval to Order"
+                : !isKycVerified
+                ? "Complete Verification (KYC) to Order"
                 : paymentMethod === "Card" || paymentMethod === "GCash"
                 ? `Proceed to Secure ${paymentMethod === "Card" ? "Stripe" : "PayMaya"} Payment (₱${grandTotal.toFixed(2)})`
                 : "Confirm Food Order (Step 1)"}

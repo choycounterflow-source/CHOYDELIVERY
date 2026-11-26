@@ -9,12 +9,13 @@ interface KycModalProps {
 }
 
 export const KycModal: React.FC<KycModalProps> = ({ isOpen, onClose }) => {
-  const { authUser, profile, myKycRecord, loginWithGoogle, submitKyc, pushToast } = useChoyFood();
+  const { authUser, profile, myKycRecord, openAuthModal, submitKyc, pushToast } = useChoyFood();
 
   const [displayName, setDisplayName] = useState(profile?.displayName || authUser?.displayName || "");
   const [realLegalName, setRealLegalName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [generatedOtp, setGeneratedOtp] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [otpVerified, setOtpVerified] = useState(false);
   const [idType, setIdType] = useState<IdType>("Drivers License");
@@ -27,38 +28,66 @@ export const KycModal: React.FC<KycModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   const handleSendOtp = () => {
-    if (phoneNumber.trim().length < 7) {
+    const cleanPhone = phoneNumber.replace(/[^0-9+]/g, "");
+    if (cleanPhone.length < 7) {
       pushToast("Enter cellphone number", "Provide a valid phone number before sending OTP.", "error");
       return;
     }
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    setGeneratedOtp(code);
     setOtpSent(true);
-    setOtpCode("482910");
-    pushToast("OTP Sent (Preview Mode)", "Verification code 482910 generated for your phone.", "info");
+    setOtpVerified(false);
+    setOtpCode("");
+    pushToast("OTP Verification Code", `Enter code ${code} to confirm your mobile number.`, "info");
   };
 
   const handleVerifyOtp = () => {
-    if (otpCode.trim().length === 6) {
+    if (otpCode.trim().length === 6 && otpCode.trim() === generatedOtp) {
       setOtpVerified(true);
       pushToast("Phone OTP Verified", "Cellphone number confirmed for KYC submission.", "success");
     } else {
-      pushToast("Invalid OTP", "Enter the 6-digit OTP code.", "error");
+      pushToast("Invalid OTP", "Enter the exact 6-digit OTP code sent to you.", "error");
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!privacyConsent) return;
+    if (realLegalName.trim().length < 2) {
+      pushToast("Legal Name Required", "Enter your complete legal name as printed on your ID.", "error");
+      return;
+    }
+    if (phoneNumber.trim().length < 7) {
+      pushToast("Mobile Number Required", "Enter a valid cellphone number.", "error");
+      return;
+    }
+    if (!otpVerified) {
+      pushToast("OTP Verification Required", "Please send and verify your 6-digit phone OTP first.", "error");
+      return;
+    }
+    if (idReference.trim().length < 3) {
+      pushToast("ID Reference Required", "Enter your Government Valid ID number.", "error");
+      return;
+    }
+    if (!profilePhotoName || !validIdPhotoName) {
+      pushToast(
+        "Required Photos Missing",
+        "Please attach both your Real Profile Picture and Government Valid ID image.",
+        "error"
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const ok = await submitKyc({
-        displayName: displayName || profile?.displayName || "ChoyFood Member",
-        realLegalName,
-        phoneNumber,
+        displayName: displayName.trim() || profile?.displayName || "ChoyFood Member",
+        realLegalName: realLegalName.trim(),
+        phoneNumber: phoneNumber.trim(),
         otpVerified,
         idType,
-        idReference: idReference || `ID-${Math.floor(100000 + Math.random() * 900000)}`,
-        profilePhotoName: profilePhotoName || "customer_selfie.jpg",
-        validIdPhotoName: validIdPhotoName || "government_valid_id.jpg",
+        idReference: idReference.trim(),
+        profilePhotoName,
+        validIdPhotoName,
         privacyConsentAccepted: privacyConsent,
       });
       if (ok) {
@@ -106,10 +135,13 @@ export const KycModal: React.FC<KycModalProps> = ({ isOpen, onClose }) => {
               </p>
             </div>
             <button
-              onClick={loginWithGoogle}
+              onClick={() => {
+                onClose();
+                openAuthModal("customer");
+              }}
               className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors"
             >
-              Sign In / Create Account
+              Sign In / Register Customer
             </button>
           </div>
         ) : myKycRecord && myKycRecord.status !== "rejected" ? (

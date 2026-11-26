@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   uid TEXT PRIMARY KEY,
   display_name TEXT NOT NULL DEFAULT 'ChoyFood User',
   role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('super_admin', 'admin', 'store', 'rider', 'customer')),
-  wallet_balance NUMERIC(12, 2) NOT NULL DEFAULT 150.00,
+  wallet_balance NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
   choy_pro_active BOOLEAN NOT NULL DEFAULT FALSE,
   kyc_status TEXT NOT NULL DEFAULT 'unverified' CHECK (kyc_status IN ('unverified', 'pending', 'verified', 'rejected')),
   rider_code TEXT DEFAULT '',
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   referral_code TEXT DEFAULT '',
   referral_earnings NUMERIC(12, 2) NOT NULL DEFAULT 0,
   referred_count INTEGER NOT NULL DEFAULT 0,
-  rating_score NUMERIC(3, 2) DEFAULT 4.9,
+  rating_score NUMERIC(3, 2) DEFAULT 5.0,
   rider_photo_url TEXT DEFAULT '',
   avatar_url TEXT DEFAULT '',
   nickname TEXT DEFAULT '',
@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.users ALTER COLUMN wallet_balance SET DEFAULT 0.00;
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS avatar_url TEXT DEFAULT '';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS nickname TEXT DEFAULT '';
 ALTER TABLE public.users ADD COLUMN IF NOT EXISTS game_bonus_points INTEGER NOT NULL DEFAULT 0;
@@ -34,6 +35,8 @@ CREATE TABLE IF NOT EXISTS public.dishes (
   name TEXT NOT NULL,
   description TEXT NOT NULL DEFAULT '',
   price NUMERIC(10, 2) NOT NULL,
+  store_price NUMERIC(10, 2),
+  admin_markup NUMERIC(10, 2) NOT NULL DEFAULT 0,
   sale_group TEXT NOT NULL DEFAULT 'Solo',
   store_name TEXT NOT NULL,
   store_owner_id TEXT NOT NULL,
@@ -47,6 +50,10 @@ CREATE TABLE IF NOT EXISTS public.dishes (
 
 ALTER TABLE public.dishes
   ADD COLUMN IF NOT EXISTS approval_status TEXT NOT NULL DEFAULT 'approved';
+ALTER TABLE public.dishes
+  ADD COLUMN IF NOT EXISTS store_price NUMERIC(10, 2);
+ALTER TABLE public.dishes
+  ADD COLUMN IF NOT EXISTS admin_markup NUMERIC(10, 2) NOT NULL DEFAULT 0;
 
 -- 3. Promos table
 CREATE TABLE IF NOT EXISTS public.promos (

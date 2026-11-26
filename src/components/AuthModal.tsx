@@ -21,12 +21,20 @@ interface AuthModalProps {
 
 type PrivilegedMethod = "pin" | "email";
 type StandardMethod = "signin" | "signup";
+type StoreMethod = "jollibee" | "signin" | "signup";
 
 interface MobilePinStatus {
   mode: "env" | "claimed" | "unclaimed";
   needsSetup: boolean;
   mobileHint: string | null;
 }
+
+const PARTNER_BRANCH_PRESETS = [
+  "Jollibee / Centro",
+  "Nanay's Sizzling & BBQ",
+  "Cebu Grill Hub",
+  "Sweet Corner",
+];
 
 const ROLE_OPTIONS: {
   id: UserRole;
@@ -53,12 +61,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
     getOpsAdminStatus,
     setupOpsAdmin,
     signInOpsAdmin,
+    getJollibeeStoreStatus,
+    setupJollibeeStore,
+    signInJollibeeStore,
     supabaseConfigured,
   } = useChoyFood();
 
   const [selectedRole, setSelectedRole] = useState<UserRole>(authModalTargetRole || "customer");
   const [privilegedMethod, setPrivilegedMethod] = useState<PrivilegedMethod>("pin");
   const [standardMethod, setStandardMethod] = useState<StandardMethod>("signin");
+  const [storeMethod, setStoreMethod] = useState<StoreMethod>("jollibee");
 
   // Mobile + PIN state (Super Admin & Admin)
   const [mobile, setMobile] = useState("");
@@ -70,6 +82,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
     mobileHint: null,
   });
   const [loadingStatus, setLoadingStatus] = useState(false);
+
+  // Jollibee / Centro Store Branch Login state
+  const [storeLoginId, setStoreLoginId] = useState("Jollibee / Centro");
+  const [storePin, setStorePin] = useState("");
+  const [showStorePin, setShowStorePin] = useState(false);
+  const [storePinStatus, setStorePinStatus] = useState<MobilePinStatus>({
+    mode: "unclaimed",
+    needsSetup: false,
+    mobileHint: null,
+  });
+  const [loadingStoreStatus, setLoadingStoreStatus] = useState(false);
 
   // Supabase Email + Password state
   const [email, setEmail] = useState("");
@@ -88,9 +111,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
     setSelectedRole(authModalTargetRole || "customer");
     setPrivilegedMethod("pin");
     setStandardMethod("signin");
+    setStoreMethod("jollibee");
     setErrorMsg(null);
     setInfoMsg(null);
     setPin("");
+    setStorePin("");
     setPassword("");
   }, [isAuthModalOpen, authModalTargetRole]);
 
@@ -121,6 +146,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
 
   useEffect(() => {
     if (!isAuthModalOpen) return;
+    if (selectedRole !== "store") return;
+
+    let active = true;
+    setLoadingStoreStatus(true);
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    getJollibeeStoreStatus()
+      .then((status) => {
+        if (active) setStorePinStatus(status);
+      })
+      .finally(() => {
+        if (active) setLoadingStoreStatus(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAuthModalOpen, selectedRole, getJollibeeStoreStatus]);
+
+  useEffect(() => {
+    if (!isAuthModalOpen) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") closeAuthModal();
     };
@@ -131,6 +178,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
   if (!isAuthModalOpen) return null;
 
   const isPrivilegedRole = selectedRole === "super_admin" || selectedRole === "admin";
+  const isStoreJollibeeMode = selectedRole === "store" && storeMethod === "jollibee";
+  const activeStandardMethod: StandardMethod =
+    selectedRole === "store"
+      ? storeMethod === "signup"
+        ? "signup"
+        : "signin"
+      : standardMethod;
   const activeRoleMeta =
     ROLE_OPTIONS.find((r) => r.id === selectedRole) || ROLE_OPTIONS[0];
 
@@ -154,7 +208,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
     setErrorMsg(null);
     setInfoMsg(null);
     setPin("");
+    setStorePin("");
     setPassword("");
+    if (role === "store") {
+      setStoreMethod("jollibee");
+    }
     if (role === "super_admin") {
       setEmail(SUPER_ADMIN_EMAIL);
     } else if (email === SUPER_ADMIN_EMAIL) {
@@ -202,6 +260,41 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
     }
   };
 
+  const handleJollibeeStoreSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    const trimmedId = storeLoginId.trim();
+    if (trimmedId.length < 3) {
+      setErrorMsg("Enter Jollibee / Centro or your registered store mobile number.");
+      return;
+    }
+    if (storePin.trim().length < 6) {
+      setErrorMsg("Store PIN / password must be at least 6 characters.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const res = storePinStatus.needsSetup
+        ? await setupJollibeeStore(trimmedId, storePin)
+        : await signInJollibeeStore(trimmedId, storePin);
+
+      if (!res.ok) {
+        setErrorMsg(res.error || "Unable to sign in to Jollibee / Centro.");
+        if ("needsSetup" in res && res.needsSetup) {
+          setStorePinStatus({ mode: "unclaimed", needsSetup: true, mobileHint: null });
+        }
+      } else {
+        setStorePin("");
+        onAuthenticated?.("store");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleEmailAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
@@ -218,7 +311,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
 
     setSubmitting(true);
     try {
-      const isSigningIn = isPrivilegedRole || standardMethod === "signin";
+      const isSigningIn = isPrivilegedRole || activeStandardMethod === "signin";
       if (isSigningIn) {
         const res = await signInWithEmail(email, password);
         if (!res.ok) {
@@ -248,7 +341,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
           setInfoMsg(
             `Your ${activeRoleMeta.label} account was created! Check your email inbox to confirm your Supabase account, then sign in.`
           );
-          setStandardMethod("signin");
+          if (selectedRole === "store") setStoreMethod("signin");
+          else setStandardMethod("signin");
           setPassword("");
         } else {
           setPassword("");
@@ -322,16 +416,109 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
           {/* Card Header Row */}
           <div className="flex items-center justify-between gap-2">
             <h3 className="font-display text-sm font-extrabold tracking-wide text-[#FF5A1F]">
-              {!isPrivilegedRole && standardMethod === "signup"
+              {isStoreJollibeeMode
+                ? "JOLLIBEE / CENTRO LOGIN"
+                : !isPrivilegedRole && activeStandardMethod === "signup"
                 ? `CREATE ${activeRoleMeta.label.toUpperCase()} ACCOUNT`
                 : activeRoleMeta.heading}
             </h3>
             <span className="text-xs font-semibold text-[#114B22] bg-[#EAF8EE] px-2.5 py-1 rounded-lg whitespace-nowrap">
-              {isPrivilegedRole && privilegedMethod === "pin"
+              {(isPrivilegedRole && privilegedMethod === "pin") || isStoreJollibeeMode
                 ? "PIN protected"
                 : "Supabase Auth"}
             </span>
           </div>
+
+          {selectedRole === "store" ? (
+            <div className="grid grid-cols-3 gap-1.5 p-1 bg-stone-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setStoreMethod("jollibee");
+                  setErrorMsg(null);
+                  setInfoMsg(null);
+                }}
+                className={`py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all truncate ${
+                  storeMethod === "jollibee"
+                    ? "bg-[#A61F09] text-white shadow-xs"
+                    : "text-stone-700 hover:text-[#1C1917]"
+                }`}
+              >
+                Jollibee / Centro
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStoreMethod("signin");
+                  setErrorMsg(null);
+                  setInfoMsg(null);
+                }}
+                className={`py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                  storeMethod === "signin"
+                    ? "bg-white text-[#1C1917] shadow-xs"
+                    : "text-stone-600 hover:text-[#1C1917]"
+                }`}
+              >
+                Email Log in
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStoreMethod("signup");
+                  setErrorMsg(null);
+                  setInfoMsg(null);
+                }}
+                className={`py-2 px-1.5 rounded-lg text-[11px] font-bold transition-all ${
+                  storeMethod === "signup"
+                    ? "bg-[#114B22] text-white shadow-xs"
+                    : "text-stone-600 hover:text-[#1C1917]"
+                }`}
+              >
+                Register
+              </button>
+            </div>
+          ) : (
+            !isPrivilegedRole && (
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-stone-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStandardMethod("signin");
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                  }}
+                  className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                    standardMethod === "signin"
+                      ? "bg-white text-[#1C1917] shadow-xs"
+                      : "text-stone-600 hover:text-[#1C1917]"
+                  }`}
+                >
+                  Log in
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStandardMethod("signup");
+                    setErrorMsg(null);
+                    setInfoMsg(null);
+                  }}
+                  className={`py-2 rounded-lg text-xs font-bold transition-all ${
+                    standardMethod === "signup"
+                      ? "bg-[#114B22] text-white shadow-xs"
+                      : "text-stone-600 hover:text-[#1C1917]"
+                  }`}
+                >
+                  Register Directly
+                </button>
+              </div>
+            )
+          )}
+
+          {!isPrivilegedRole && activeStandardMethod === "signup" && selectedRole === "customer" && (
+            <div className="bg-amber-50 border border-amber-200/90 rounded-xl px-3.5 py-2.5 text-[11px] text-amber-950 leading-relaxed">
+              <strong>Direct Customer Registration:</strong> Register anytime to browse menus and save favorites. You must complete <strong>Verification (KYC)</strong> before placing any food order.
+            </div>
+          )}
 
           {infoMsg && (
             <div className="bg-[#EAF8EE] text-[#114B22] rounded-xl px-4 py-3 text-xs font-medium leading-relaxed">
@@ -339,8 +526,104 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
             </div>
           )}
 
-          {/* Privileged Mobile + PIN Form */}
-          {isPrivilegedRole && privilegedMethod === "pin" ? (
+          {/* Jollibee / Centro Official Store Branch Login */}
+          {isStoreJollibeeMode ? (
+            <form onSubmit={handleJollibeeStoreSubmit} className="space-y-4">
+              <div className="bg-[#A61F09]/10 border border-[#A61F09]/25 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-xs font-extrabold text-[#A61F09]">
+                    Jollibee / Centro · Surigao City
+                  </p>
+                  <p className="text-[11px] text-stone-600">
+                    Manage Jollibee menu prices, stock &amp; live kitchen orders
+                  </p>
+                </div>
+                <Store className="w-5 h-5 text-[#A61F09] shrink-0" />
+              </div>
+
+              {storePinStatus.needsSetup ? (
+                <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 text-xs text-amber-950 space-y-1">
+                  <p className="font-bold">First-Run Jollibee / Centro Store Setup</p>
+                  <p className="text-[11px] leading-relaxed text-amber-900">
+                    Confirm your store login ID (e.g.{" "}
+                    <span className="font-mono font-semibold">Jollibee / Centro</span> or mobile) and
+                    choose a 6-character PIN to claim branch access. For Render, also set{" "}
+                    <span className="font-mono font-semibold">STORE_JOLLIBEE_MOBILE</span> and{" "}
+                    <span className="font-mono font-semibold">STORE_JOLLIBEE_PIN</span>.
+                  </p>
+                </div>
+              ) : storePinStatus.mobileHint ? (
+                <p className="text-xs text-slate-500">
+                  Registered branch ID:{" "}
+                  <span className="font-mono font-semibold text-slate-800">
+                    {storePinStatus.mobileHint}
+                  </span>
+                </p>
+              ) : null}
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-bold text-slate-700">
+                  Store Login ID / Mobile Number
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={60}
+                  value={storeLoginId}
+                  onChange={(e) => setStoreLoginId(e.target.value)}
+                  placeholder="Jollibee / Centro or 09XX XXX XXXX"
+                  className="w-full h-12 px-4 rounded-xl border border-stone-200 bg-white text-base text-slate-900 font-semibold placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#A61F09]/25 focus:border-[#A61F09]"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-sm font-bold text-slate-700">
+                  Branch PIN (min 6 chars)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showStorePin ? "text" : "password"}
+                    required
+                    minLength={6}
+                    maxLength={32}
+                    autoComplete={storePinStatus.needsSetup ? "new-password" : "current-password"}
+                    value={storePin}
+                    onChange={(e) => setStorePin(e.target.value)}
+                    placeholder="••••••"
+                    className="w-full h-12 pl-4 pr-12 rounded-xl border border-stone-200 bg-white text-base text-slate-900 font-mono tracking-widest placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#A61F09]/25 focus:border-[#A61F09]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowStorePin((prev) => !prev)}
+                    aria-label={showStorePin ? "Hide store PIN" : "Show store PIN"}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 min-h-[40px] min-w-[40px] flex items-center justify-center text-stone-400 hover:text-stone-700"
+                  >
+                    {showStorePin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {errorMsg && (
+                <div className="bg-[#FEF2F2] text-[#991B1B] rounded-xl px-4 py-3 text-sm font-medium leading-snug">
+                  {errorMsg}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={submitting || loadingStoreStatus}
+                className="w-full h-12 bg-[#A61F09] hover:bg-[#8A1807] disabled:opacity-60 text-white font-bold text-base rounded-xl shadow-md shadow-red-900/20 transition-colors"
+              >
+                {submitting
+                  ? "Verifying..."
+                  : storePinStatus.needsSetup
+                  ? "Save & Log in as Jollibee / Centro"
+                  : "Log in as Jollibee / Centro"}
+              </button>
+            </form>
+          ) : /* Privileged Mobile + PIN Form */
+          isPrivilegedRole && privilegedMethod === "pin" ? (
             <form onSubmit={handleMobilePinSubmit} className="space-y-4">
               {pinStatus.needsSetup ? (
                 <div className="bg-amber-50 border border-amber-200/80 rounded-xl p-3.5 text-xs text-amber-950 space-y-1">
@@ -451,7 +734,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                 </div>
               )}
 
-              {!isPrivilegedRole && standardMethod === "signup" && (
+              {!isPrivilegedRole && activeStandardMethod === "signup" && (
                 <>
                   <div className="space-y-1.5">
                     <label className="block text-sm font-bold text-slate-700">Display Name</label>
@@ -464,7 +747,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                       onChange={(e) => setDisplayName(e.target.value)}
                       placeholder={
                         selectedRole === "store"
-                          ? "e.g. Nanay Rosa"
+                          ? "e.g. Jollibee Centro Manager"
                           : selectedRole === "rider"
                           ? "e.g. Marco Rider"
                           : "e.g. Juan Dela Cruz"
@@ -474,10 +757,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                   </div>
 
                   {selectedRole === "store" && (
-                    <div className="space-y-1.5">
+                    <div className="space-y-2">
                       <label className="block text-sm font-bold text-slate-700">
                         Partner Store / Kitchen Name
                       </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {PARTNER_BRANCH_PRESETS.map((preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setStoreName(preset)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                              storeName === preset
+                                ? "bg-[#A61F09] text-white border-[#A61F09]"
+                                : "bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100"
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
                       <input
                         type="text"
                         required
@@ -485,7 +784,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                         maxLength={80}
                         value={storeName}
                         onChange={(e) => setStoreName(e.target.value)}
-                        placeholder="e.g. Nanay's Sizzling & BBQ"
+                        placeholder="e.g. Jollibee / Centro"
                         className="w-full h-12 px-4 rounded-xl border border-stone-200 bg-white text-base text-slate-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#FF5A1F]/25 focus:border-[#FF5A1F]"
                       />
                     </div>
@@ -523,6 +822,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                   placeholder={
                     selectedRole === "super_admin"
                       ? SUPER_ADMIN_EMAIL
+                      : selectedRole === "store"
+                      ? "jollibee.centro@choyfood.ph"
                       : `${selectedRole}@choyfood.ph`
                   }
                   className="w-full h-12 px-4 rounded-xl border border-stone-200 bg-white text-base text-slate-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-[#FF5A1F]/25 focus:border-[#FF5A1F]"
@@ -537,7 +838,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                     required
                     minLength={6}
                     autoComplete={
-                      isPrivilegedRole || standardMethod === "signin"
+                      isPrivilegedRole || activeStandardMethod === "signin"
                         ? "current-password"
                         : "new-password"
                     }
@@ -569,10 +870,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                 className="w-full h-12 bg-[#FF5A1F] hover:bg-[#E54B12] disabled:opacity-60 text-white font-bold text-base rounded-xl shadow-md shadow-orange-500/20 transition-colors"
               >
                 {submitting
-                  ? isPrivilegedRole || standardMethod === "signin"
+                  ? isPrivilegedRole || activeStandardMethod === "signin"
                     ? "Signing in..."
                     : "Creating account..."
-                  : isPrivilegedRole || standardMethod === "signin"
+                  : isPrivilegedRole || activeStandardMethod === "signin"
                   ? "Log in"
                   : `Register ${activeRoleMeta.label}`}
               </button>
@@ -589,6 +890,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({ onAuthenticated }) => {
                     className="text-xs font-semibold text-[#114B22] hover:underline"
                   >
                     Back to {roleTitle} Mobile + PIN
+                  </button>
+                ) : selectedRole === "store" ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStoreMethod("jollibee");
+                      setErrorMsg(null);
+                      setInfoMsg(null);
+                    }}
+                    className="text-xs font-semibold text-[#A61F09] hover:underline"
+                  >
+                    Log in as Jollibee / Centro Branch instead
                   </button>
                 ) : (
                   <button

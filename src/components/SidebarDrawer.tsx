@@ -3,6 +3,7 @@ import { AppView, UserRole } from "../types/choyfood";
 import { useChoyFood } from "../context/SupabaseContext";
 import { ChoyBrandBadge } from "./ChoyBrandBadge";
 import { CustomerTab } from "./CustomerDashboard";
+import { PWAInstallButton } from "./PWAInstallButton";
 import {
   Award,
   Bot,
@@ -379,6 +380,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               </button>
             </div>
           </div>
+
+          <PWAInstallButton variant="sidebar" onActionComplete={onClose} />
 
           {/* Customer Hub Menu Buttons */}
           <div className="space-y-2">
