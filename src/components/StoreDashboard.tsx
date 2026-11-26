@@ -1,8 +1,30 @@
-import React, { useState } from "react";
-import { useChoyFood } from "../context/FirebaseContext";
+import React, { useMemo, useState } from "react";
+import { useChoyFood } from "../context/SupabaseContext";
 import { DISH_IMAGES, ORDER_STEPS } from "../data/seedData";
-import { Dish, SaleGroup } from "../types/choyfood";
-import { Check, Flame, Pencil, Plus, Trash2, UtensilsCrossed, X } from "lucide-react";
+import { Dish, SaleGroup, StorePermitChecklist } from "../types/choyfood";
+import { playNotificationChime } from "../lib/fees";
+import {
+  Bot,
+  Check,
+  CheckCircle2,
+  ClipboardCheck,
+  FileBadge2,
+  Flame,
+  KeyRound,
+  Megaphone,
+  Menu,
+  Pencil,
+  Plus,
+  ReceiptText,
+  ScrollText,
+  Trash2,
+  UtensilsCrossed,
+  Volume2,
+  VolumeX,
+  X,
+} from "lucide-react";
+
+type StoreTab = "queue" | "permits" | "sales" | "rules" | "account";
 
 const IMAGE_PRESETS = [
   { label: "Lechon Kawali Platter", url: DISH_IMAGES.lechonKawali },
@@ -24,8 +46,17 @@ export const StoreDashboard: React.FC = () => {
     toggleDishAvailability,
     updateDishPrice,
     deleteMenuDish,
-    loginWithGoogle,
+    openAuthModal,
+    openAskChoy,
+    cmsSettings,
+    setStorePermit,
+    changeUserPassword,
+    pushToast,
   } = useChoyFood();
+
+  const [storeTab, setStoreTab] = useState<StoreTab>("queue");
+  const [isStoreSidebarOpen, setIsStoreSidebarOpen] = useState(false);
+  const [storeChimeOn, setStoreChimeOn] = useState(true);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [dishName, setDishName] = useState("");
@@ -40,11 +71,43 @@ export const StoreDashboard: React.FC = () => {
   const [draftPrice, setDraftPrice] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  // Store Account password state
+  const [storeNewPass, setStoreNewPass] = useState("");
+  const [storeConfirmPass, setStoreConfirmPass] = useState("");
+  const [storePassStatus, setStorePassStatus] = useState<{ ok: boolean; text: string } | null>(null);
+  const [updatingStorePass, setUpdatingStorePass] = useState(false);
+
   const canManageCatalog = Boolean(authUser && (isAdmin || profile?.role === "store"));
+  const currentStoreLabel = profile?.storeName || "Nanay's Sizzling & BBQ";
+  const storeOperatingStatus = cmsSettings.storeStatuses[currentStoreLabel] || "open";
+  const currentPermits: StorePermitChecklist = cmsSettings.storePermits[currentStoreLabel] || {
+    dti: false,
+    bir: false,
+    mayors: false,
+    sanitary: false,
+  };
+
+  const triggerStoreChime = () => {
+    if (storeChimeOn && cmsSettings.soundEnabled) {
+      playNotificationChime("store");
+    }
+  };
 
   const kitchenOrders = orders.filter(
     (o) => o.status !== "delivered" && o.status !== "cancelled"
   );
+
+  const storeSalesOrders = useMemo(
+    () =>
+      orders.filter(
+        (o) =>
+          o.status !== "cancelled" &&
+          (isAdmin || o.storeName.toLowerCase() === currentStoreLabel.toLowerCase())
+      ),
+    [orders, isAdmin, currentStoreLabel]
+  );
+
+  const totalStoreRevenue = storeSalesOrders.reduce((sum, o) => sum + o.subtotal, 0);
 
   const handleCreateDish = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,32 +146,142 @@ export const StoreDashboard: React.FC = () => {
 
   const availableCount = allDishes.filter((d) => d.available).length;
 
+  const handleStorePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (storeNewPass !== storeConfirmPass) {
+      setStorePassStatus({ ok: false, text: "Passwords do not match." });
+      return;
+    }
+    setUpdatingStorePass(true);
+    setStorePassStatus(null);
+    try {
+      const res = await changeUserPassword(storeNewPass);
+      if (res.ok) {
+        setStorePassStatus({ ok: true, text: "Store password updated." });
+        setStoreNewPass("");
+        setStoreConfirmPass("");
+      } else {
+        setStorePassStatus({ ok: false, text: res.error || "Failed to update password." });
+      }
+    } finally {
+      setUpdatingStorePass(false);
+    }
+  };
+
+  const storeMenuTabs: { id: StoreTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { id: "queue", label: "Kitchen Queue & Menu", icon: Flame },
+    { id: "permits", label: "Business Permits", icon: FileBadge2 },
+    { id: "sales", label: "Sales & Earnings", icon: ReceiptText },
+    { id: "rules", label: "Store Rules & SLA", icon: ScrollText },
+    { id: "account", label: "Account & Password", icon: KeyRound },
+  ];
+
   return (
     <div className="space-y-8">
-      {/* Store Board Header */}
-      <section className="bg-[#A61F09] text-white rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="space-y-1.5">
-          <p className="text-xs text-orange-100 font-medium">
-            Partner Store Kitchen · Open &amp; Receiving Tickets
-          </p>
-          <h1 className="font-display text-2xl sm:text-3xl font-extrabold">
-            {profile?.storeName || "Nanay's Sizzling & BBQ"}
-          </h1>
-          <p className="text-sm text-orange-50/90">
-            Accept live customer orders (Step 3), signal Food Ready for riders (Step 5), and manage
-            dish stock, pricing, and fresh specials in real time.
-          </p>
+      {/* Store Moving Marquee Banner */}
+      <div className="bg-amber-100 border border-amber-300 text-amber-950 rounded-xl px-3.5 h-10 flex items-center gap-2.5 text-xs font-bold shadow-xs">
+        <Megaphone className="w-4 h-4 text-[#A61F09] shrink-0" />
+        <div className="overflow-hidden flex-1">
+          <div className="animate-marquee whitespace-nowrap">{cmsSettings.bannerText}</div>
+        </div>
+      </div>
+
+      {/* Store Board Header with Sidebar Drawer Trigger, Ask Choy AI, and Sound Toggle */}
+      <section className="bg-[#A61F09] text-white rounded-2xl p-6 sm:p-8 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <button
+            type="button"
+            onClick={() => {
+              triggerStoreChime();
+              setIsStoreSidebarOpen(true);
+            }}
+            aria-label="Open store menu"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-white/15 hover:bg-white/25 text-white transition-colors shrink-0 mt-0.5"
+            title="Open Store Sidebar Menu"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <div className="space-y-1.5">
+            <p className="text-xs text-orange-100 font-medium">
+              Dashboard 3 of 5 · Partner Store Kitchen ·{" "}
+              <span className="uppercase font-mono font-bold text-amber-300">
+                {storeOperatingStatus === "open"
+                  ? "Open & Receiving"
+                  : storeOperatingStatus === "coming_soon"
+                  ? "Coming Soon"
+                  : "Closed"}
+              </span>
+            </p>
+            <h1 className="font-display text-2xl sm:text-3xl font-extrabold">
+              {currentStoreLabel}
+            </h1>
+            <p className="text-sm text-orange-50/90">
+              Accept live customer orders (Step 3), signal Food Ready for riders (Step 5), and manage
+              dish stock, pricing, and fresh specials in real time.
+            </p>
+          </div>
         </div>
 
-        <button
-          onClick={() => (authUser ? setIsAddModalOpen(true) : loginWithGoogle())}
-          className="inline-flex items-center gap-2 bg-white hover:bg-orange-50 text-[#A61F09] font-semibold text-xs px-4 py-3 rounded-lg transition-colors whitespace-nowrap shrink-0 self-start sm:self-center"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add Menu Item</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start lg:self-center">
+          <button
+            type="button"
+            onClick={() => {
+              setStoreChimeOn((prev) => !prev);
+              if (!storeChimeOn) playNotificationChime("store");
+            }}
+            className="inline-flex items-center gap-1.5 bg-black/25 hover:bg-black/35 text-white text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors"
+            title="Toggle store click chime"
+          >
+            {storeChimeOn ? <Volume2 className="w-4 h-4 text-amber-300" /> : <VolumeX className="w-4 h-4 text-orange-200" />}
+            <span>{storeChimeOn ? "Chime ON" : "Muted"}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerStoreChime();
+              openAskChoy();
+            }}
+            className="inline-flex items-center gap-1.5 bg-black/25 hover:bg-black/35 text-white text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors"
+          >
+            <Bot className="w-4 h-4 text-amber-300" />
+            <span>Ask Choy AI</span>
+          </button>
+          <button
+            onClick={() => {
+              triggerStoreChime();
+              if (authUser) setIsAddModalOpen(true);
+              else openAuthModal("store");
+            }}
+            className="inline-flex items-center gap-2 bg-white hover:bg-orange-50 text-[#A61F09] font-semibold text-xs px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Menu Item</span>
+          </button>
+        </div>
       </section>
 
+      {!authUser && (
+        <div className="bg-white border border-stone-200 rounded-xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="font-semibold text-sm text-[#1C1917]">
+              Sign in with your Partner Store account
+            </p>
+            <p className="text-xs text-stone-500">
+              Sign in or register a Store account to accept kitchen tickets, toggle stock, and
+              publish live dishes to Supabase.
+            </p>
+          </div>
+          <button
+            onClick={() => openAuthModal("store")}
+            className="bg-[#A61F09] hover:bg-[#8A1807] text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap shrink-0"
+          >
+            Sign In / Register Store
+          </button>
+        </div>
+      )}
+
+      {storeTab === "queue" && (
+        <div className="space-y-8">
       {/* Active Kitchen Queue */}
       <section className="bg-white border border-stone-200 rounded-2xl p-6 space-y-5">
         <div className="flex items-center justify-between border-b border-stone-200 pb-4">
@@ -153,7 +326,10 @@ export const StoreDashboard: React.FC = () => {
 
                   <div className="flex items-center gap-2.5 shrink-0">
                     <button
-                      onClick={() => advanceOrder(order, 3)}
+                      onClick={() => {
+                        triggerStoreChime();
+                        advanceOrder(order, 3);
+                      }}
                       disabled={order.step >= 3}
                       className="inline-flex items-center gap-1.5 bg-[#E08E00] hover:bg-amber-700 disabled:bg-stone-200 disabled:text-stone-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap"
                     >
@@ -161,7 +337,10 @@ export const StoreDashboard: React.FC = () => {
                       <span>{order.step >= 3 ? "Cooking" : "Accept Ticket (Step 3)"}</span>
                     </button>
                     <button
-                      onClick={() => advanceOrder(order, 5)}
+                      onClick={() => {
+                        triggerStoreChime();
+                        advanceOrder(order, 5);
+                      }}
                       disabled={order.step >= 5}
                       className="inline-flex items-center gap-1.5 bg-[#1F7A4C] hover:bg-emerald-800 disabled:bg-stone-200 disabled:text-stone-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap"
                     >
@@ -175,7 +354,7 @@ export const StoreDashboard: React.FC = () => {
         )}
       </section>
 
-      {/* Published Partner Menu Table with Stock, Price & Delete Controls */}
+      {/* Published Partner Menu Table with Stock, Approval Status, Price & Delete Controls */}
       <section className="bg-white border border-stone-200 rounded-2xl p-6 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
@@ -183,7 +362,7 @@ export const StoreDashboard: React.FC = () => {
               Live Store Menu Catalog
             </h2>
             <p className="text-xs text-stone-500">
-              Toggle availability, edit prices inline, or remove discontinued dishes
+              Toggle availability, edit prices inline, or track Super Admin / Admin dish approval status
             </p>
           </div>
           <span className="text-xs text-stone-500 font-mono tabular-nums">
@@ -197,6 +376,7 @@ export const StoreDashboard: React.FC = () => {
               <tr>
                 <th className="py-2.5 pr-4 font-semibold">Dish</th>
                 <th className="py-2.5 px-3 font-semibold">Store &amp; Group</th>
+                <th className="py-2.5 px-3 font-semibold">Approval</th>
                 <th className="py-2.5 px-3 font-semibold">Stock Status</th>
                 <th className="py-2.5 px-3 font-semibold text-right">Price</th>
                 <th className="py-2.5 px-3 font-semibold text-right">Likes</th>
@@ -207,6 +387,7 @@ export const StoreDashboard: React.FC = () => {
               {allDishes.map((dish) => {
                 const isEditingPrice = editingPriceId === dish.id;
                 const isConfirmingDelete = confirmDeleteId === dish.id;
+                const approval = dish.approvalStatus || "approved";
                 return (
                   <tr
                     key={dish.id}
@@ -217,6 +398,19 @@ export const StoreDashboard: React.FC = () => {
                     </td>
                     <td className="py-3 px-3 text-xs text-stone-600">
                       {dish.storeName} · {dish.saleGroup}
+                    </td>
+                    <td className="py-3 px-3 text-xs font-semibold">
+                      <span
+                        className={`px-2 py-0.5 rounded capitalize ${
+                          approval === "approved"
+                            ? "bg-emerald-100 text-[#1F7A4C]"
+                            : approval === "rejected"
+                            ? "bg-rose-100 text-rose-700"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {approval === "pending" ? "Pending Admin" : approval}
+                      </span>
                     </td>
                     <td className="py-3 px-3 text-xs font-semibold">
                       <span className={dish.available ? "text-[#1F7A4C]" : "text-stone-500"}>
@@ -316,6 +510,261 @@ export const StoreDashboard: React.FC = () => {
           </table>
         </div>
       </section>
+        </div>
+      )}
+
+      {storeTab === "permits" && (
+        <section className="bg-white border border-stone-200 rounded-2xl p-6 sm:p-8 space-y-6">
+          <div className="border-b border-stone-200 pb-4">
+            <h2 className="font-display text-xl font-bold text-[#1C1917] flex items-center gap-2">
+              <FileBadge2 className="w-5 h-5 text-[#A61F09]" />
+              <span>Government Permits &amp; Sanitary Compliance</span>
+            </h2>
+            <p className="text-xs text-stone-500">
+              Required DTI, BIR, Mayor&apos;s, and Sanitary clearances verified by Super Admin &amp; Admin Ops.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            {(
+              [
+                { key: "dti", label: "DTI Business Name Registration", desc: "Department of Trade and Industry certificate" },
+                { key: "bir", label: "BIR Certificate of Registration (2303)", desc: "Active tax & official receipt compliance" },
+                { key: "mayors", label: "Mayor's / Business Permit", desc: "LGU city operating permit for Surigao / Cebu" },
+                { key: "sanitary", label: "Sanitary & Food Safety Permit", desc: "City Health Office kitchen sanitation clearance" },
+              ] as const
+            ).map((item) => {
+              const verified = currentPermits[item.key];
+              return (
+                <div
+                  key={item.key}
+                  className={`p-4 rounded-xl border flex items-start justify-between gap-3 ${
+                    verified ? "bg-emerald-50 border-emerald-200" : "bg-stone-50 border-stone-200"
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <p className="font-bold text-sm text-[#1C1917]">{item.label}</p>
+                    <p className="text-stone-600">{item.desc}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerStoreChime();
+                      if (isAdmin) {
+                        setStorePermit(currentStoreLabel, item.key, !verified);
+                      } else {
+                        pushToast("Permit Logged", `${item.label} flagged for Admin verification.`, "info");
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg font-bold shrink-0 ${
+                      verified
+                        ? "bg-[#1F7A4C] text-white"
+                        : "bg-white border border-stone-300 text-stone-700 hover:bg-stone-100"
+                    }`}
+                  >
+                    {verified ? "Verified" : isAdmin ? "Mark Verified" : "Pending"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {storeTab === "sales" && (
+        <section className="bg-white border border-stone-200 rounded-2xl p-6 sm:p-8 space-y-6">
+          <div className="border-b border-stone-200 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="font-display text-xl font-bold text-[#1C1917] flex items-center gap-2">
+                <ReceiptText className="w-5 h-5 text-[#A61F09]" />
+                <span>Store Sales &amp; Kitchen Revenue</span>
+              </h2>
+              <p className="text-xs text-stone-500">Live sales summary across all active and completed store tickets.</p>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2 text-right">
+              <p className="text-[11px] text-emerald-800 font-semibold">Total Kitchen Sales</p>
+              <p className="font-display text-xl font-extrabold text-[#1F7A4C] tabular-nums">
+                ₱{totalStoreRevenue.toFixed(2)}
+              </p>
+            </div>
+          </div>
+
+          {storeSalesOrders.length === 0 ? (
+            <p className="text-xs text-stone-500 py-8 text-center">No store orders recorded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-stone-200 text-stone-500">
+                  <tr>
+                    <th className="py-2.5 pr-4 font-semibold">Order #</th>
+                    <th className="py-2.5 px-3 font-semibold">Items</th>
+                    <th className="py-2.5 px-3 font-semibold">Payment</th>
+                    <th className="py-2.5 px-3 font-semibold">Status</th>
+                    <th className="py-2.5 pl-3 font-semibold text-right">Kitchen Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {storeSalesOrders.map((o) => (
+                    <tr key={o.id} className="hover:bg-stone-50">
+                      <td className="py-3 pr-4 font-mono font-bold text-[#1C1917]">{o.orderNumber}</td>
+                      <td className="py-3 px-3 text-stone-700">
+                        {o.items.map((i) => `${i.qty}x ${i.name}`).join(", ")}
+                      </td>
+                      <td className="py-3 px-3 font-mono">{o.paymentMethod}</td>
+                      <td className="py-3 px-3 capitalize font-semibold text-[#1F7A4C]">{o.status}</td>
+                      <td className="py-3 pl-3 text-right font-mono font-bold tabular-nums">
+                        ₱{o.subtotal.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {storeTab === "rules" && (
+        <section className="bg-white border border-stone-200 rounded-2xl p-6 sm:p-8 space-y-5 text-xs leading-relaxed">
+          <div className="border-b border-stone-200 pb-4">
+            <h2 className="font-display text-xl font-bold text-[#1C1917] flex items-center gap-2">
+              <ScrollText className="w-5 h-5 text-[#A61F09]" />
+              <span>Partner Store Rules &amp; Kitchen SLA</span>
+            </h2>
+            <p className="text-stone-500">Quality, packaging, and dispatch standards for CHOY DELIVERY kitchens.</p>
+          </div>
+          <ol className="list-decimal list-inside space-y-3 text-stone-700">
+            <li><strong>10-Minute Prep Confirmation:</strong> Accept incoming orders promptly (Step 3) and mark Food Ready (Step 5) before rider arrival.</li>
+            <li><strong>Tamper-Evident Packaging:</strong> Seal all food containers and soup bowls tightly to prevent spills during motorcycle transit.</li>
+            <li><strong>Accurate Menu Pricing:</strong> Keep prices aligned with in-store rates; newly added items require Admin approval before appearing publicly.</li>
+            <li><strong>Stock Accuracy:</strong> Immediately mark sold-out items to avoid rider wait times and order cancellations.</li>
+          </ol>
+        </section>
+      )}
+
+      {storeTab === "account" && (
+        <section className="max-w-2xl bg-white border border-stone-200 rounded-2xl p-6 sm:p-8 space-y-6 text-xs">
+          <div className="border-b border-stone-200 pb-4">
+            <h2 className="font-display text-xl font-bold text-[#1C1917] flex items-center gap-2">
+              <KeyRound className="w-5 h-5 text-[#A61F09]" />
+              <span>Store Account &amp; Password Settings</span>
+            </h2>
+            <p className="text-stone-500">Kitchen account: <strong className="text-[#1C1917]">{currentStoreLabel}</strong></p>
+          </div>
+
+          <form onSubmit={handleStorePasswordSubmit} className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1">New Password (min 6 chars)</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={storeNewPass}
+                  onChange={(e) => setStoreNewPass(e.target.value)}
+                  className="w-full text-sm px-3.5 py-2 rounded-lg border border-stone-300"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold text-stone-700 mb-1">Confirm New Password</label>
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={storeConfirmPass}
+                  onChange={(e) => setStoreConfirmPass(e.target.value)}
+                  className="w-full text-sm px-3.5 py-2 rounded-lg border border-stone-300"
+                />
+              </div>
+            </div>
+            {storePassStatus && (
+              <p className={`font-semibold ${storePassStatus.ok ? "text-[#1F7A4C]" : "text-rose-700"}`}>
+                {storePassStatus.text}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={updatingStorePass}
+              className="bg-[#A61F09] hover:bg-[#8A1807] disabled:opacity-60 text-white font-semibold px-5 py-2.5 rounded-lg"
+            >
+              {updatingStorePass ? "Updating..." : "Update Store Password"}
+            </button>
+          </form>
+        </section>
+      )}
+
+      {/* Store Sidebar Drawer */}
+      {isStoreSidebarOpen && (
+        <div className="fixed inset-0 z-50 flex bg-black/50 backdrop-blur-xs">
+          <aside className="w-80 max-w-[85vw] bg-[#7F1D1D] text-white h-full flex flex-col justify-between shadow-2xl">
+            <div className="px-5 py-5 border-b border-white/10 flex items-center justify-between">
+              <div className="space-y-0.5">
+                <p className="font-display text-lg font-extrabold">Partner Store Menu</p>
+                <p className="text-xs text-orange-100 truncate">{currentStoreLabel}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStoreSidebarOpen(false)}
+                className="p-1.5 text-orange-100 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <nav className="flex-1 overflow-y-auto px-4 py-4 space-y-1" aria-label="Store sidebar menu">
+              {storeMenuTabs.map((item) => {
+                const Icon = item.icon;
+                const active = storeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      triggerStoreChime();
+                      setStoreTab(item.id);
+                      setIsStoreSidebarOpen(false);
+                    }}
+                    className={`w-full min-h-[44px] flex items-center gap-3.5 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors text-left ${
+                      active
+                        ? "bg-white text-[#A61F09] shadow-sm"
+                        : "text-white/90 hover:bg-white/10 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5 shrink-0" />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-4 border-t border-white/10 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerStoreChime();
+                  setIsStoreSidebarOpen(false);
+                  openAskChoy();
+                }}
+                className="w-full min-h-[42px] inline-flex items-center justify-center gap-2 bg-[#FF5A1F] hover:bg-[#E54B12] text-white text-xs font-bold rounded-xl transition-colors"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Ask Choy AI</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsStoreSidebarOpen(false);
+                  openAuthModal("store");
+                }}
+                className="w-full min-h-[40px] inline-flex items-center justify-center gap-2 bg-white/15 hover:bg-white/25 text-white text-xs font-semibold rounded-xl transition-colors"
+              >
+                <span>Switch Store Account</span>
+              </button>
+            </div>
+          </aside>
+          <div className="flex-1" onClick={() => setIsStoreSidebarOpen(false)} />
+        </div>
+      )}
 
       {/* Add Menu Item Modal */}
       {isAddModalOpen && (
@@ -328,7 +777,7 @@ export const StoreDashboard: React.FC = () => {
                 </h3>
                 <p className="text-xs text-stone-500">
                   {isAdmin || profile?.role === "store"
-                    ? "Saved directly to Firestore live catalog"
+                    ? "Saved directly to Supabase live catalog"
                     : "Requires Partner Store or Super Admin role"}
                 </p>
               </div>

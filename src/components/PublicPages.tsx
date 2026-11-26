@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { AppView, BlogPost } from "../types/choyfood";
 import { COMMUNITY_BLOG_POSTS, HERO_FEAST_IMAGE } from "../data/seedData";
-import { useChoyFood } from "../context/FirebaseContext";
+import { useChoyFood } from "../context/SupabaseContext";
 import {
   ArrowRight,
   Bot,
@@ -114,7 +114,7 @@ export const PublicPages: React.FC<PublicPagesProps> = ({ view, onNavigate, onOp
               Super Admin KYC Vault
             </h2>
             <p className="text-sm text-stone-600 leading-relaxed">
-              Valid IDs and real legal names are stored privately in an Admin-only Firestore vault,
+              Valid IDs and real legal names are stored privately in an Admin-only Supabase vault,
               never exposed to kitchens or riders.
             </p>
             <button

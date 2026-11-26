@@ -1,17 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query,
-  where,
-} from "firebase/firestore";
-import { db, handleFirestoreError, OperationType, SUPER_ADMIN_EMAIL } from "../lib/firebase";
-import { useChoyFood } from "../context/FirebaseContext";
+import { useChoyFood } from "../context/SupabaseContext";
 import { DISTANCE_FEES, ORDER_STEPS } from "../data/seedData";
-import { BLUEPRINT_LIMITS, Order, OrderStatus } from "../types/choyfood";
+import { Order, OrderStatus } from "../types/choyfood";
 import {
   CheckCircle2,
   Clock,
@@ -65,7 +55,7 @@ const CUSTOMER_STATUS_COPY: Record<
 };
 
 function formatSyncTime(date: Date | null): string {
-  if (!date) return "Waiting for snapshot";
+  if (!date) return "Live Supabase Sync";
   return date.toLocaleTimeString("en-PH", {
     hour: "2-digit",
     minute: "2-digit",
@@ -74,112 +64,42 @@ function formatSyncTime(date: Date | null): string {
 }
 
 export const RiderOrderTracker: React.FC = () => {
-  const { authUser, authReady, profile, isAdmin, advanceOrder, loginWithGoogle } = useChoyFood();
+  const { authUser, profile, isAdmin, orders, advanceOrder, loginWithGoogle } = useChoyFood();
 
-  const [trackedOrders, setTrackedOrders] = useState<Order[]>([]);
   const [selectedOrderId, setSelectedOrderId] = useState<string>("");
-  const [liveOrder, setLiveOrder] = useState<Order | null>(null);
-  const [loadingList, setLoadingList] = useState<boolean>(false);
-  const [loadingDoc, setLoadingDoc] = useState<boolean>(false);
-  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(() => new Date());
   const [updatingStep, setUpdatingStep] = useState<boolean>(false);
 
+  const loadingList = false;
+  const loadingDoc = false;
   const riderCode = profile?.riderCode || "JC389";
 
-  // 1. Real-time Firestore collection listener scoped strictly to firestore.rules allow list
-  useEffect(() => {
-    if (!authReady || !authUser || !authUser.emailVerified) {
-      setTrackedOrders([]);
-      setSelectedOrderId("");
-      setLiveOrder(null);
-      setLoadingList(false);
-      return;
+  const trackedOrders = useMemo(() => {
+    if (!authUser) return [];
+    if (isAdmin) return orders;
+    if (profile?.role === "rider") {
+      return orders.filter((o) => o.riderId === authUser.uid || !o.riderId);
     }
-
-    setLoadingList(true);
-    const isBootstrap = authUser.email === SUPER_ADMIN_EMAIL;
-
-    const ordersQuery = isBootstrap
-      ? query(collection(db, "orders"), orderBy("createdAt", "desc"), limit(25))
-      : profile?.role === "rider"
-      ? query(collection(db, "orders"), where("riderId", "==", authUser.uid), limit(25))
-      : profile?.role === "store"
-      ? query(collection(db, "orders"), where("storeOwnerId", "==", authUser.uid), limit(25))
-      : query(collection(db, "orders"), where("customerId", "==", authUser.uid), limit(25));
-
-    const unsubscribe = onSnapshot(
-      ordersQuery,
-      (snapshot) => {
-        const docs: Order[] = snapshot.docs.map((snap) => ({
-          id: snap.id,
-          ...(snap.data() as Omit<Order, "id">),
-        }));
-        setTrackedOrders(docs);
-        setLoadingList(false);
-        setLastSyncedAt(new Date());
-
-        setSelectedOrderId((prev) => {
-          if (prev && docs.some((d) => d.id === prev)) return prev;
-          const activeFirst = docs.find(
-            (d) => d.status !== "delivered" && d.status !== "cancelled"
-          );
-          return activeFirst?.id || docs[0]?.id || "";
-        });
-      },
-      (error) => {
-        setLoadingList(false);
-        handleFirestoreError(error, OperationType.LIST, "orders");
-      }
-    );
-
-    return () => unsubscribe();
-  }, [authReady, authUser, profile?.role]);
-
-  // 2. Real-time Firestore document listener on the selected order for instant status updates
-  useEffect(() => {
-    if (
-      !authReady ||
-      !authUser ||
-      !authUser.emailVerified ||
-      !selectedOrderId ||
-      !BLUEPRINT_LIMITS.idPattern.test(selectedOrderId)
-    ) {
-      setLiveOrder(null);
-      setLoadingDoc(false);
-      return;
+    if (profile?.role === "store") {
+      return orders.filter((o) => o.storeOwnerId === authUser.uid);
     }
+    return orders.filter((o) => o.customerId === authUser.uid);
+  }, [authUser, isAdmin, orders, profile?.role]);
 
-    setLoadingDoc(true);
-    const orderPath = `orders/${selectedOrderId}`;
-    const orderRef = doc(db, "orders", selectedOrderId);
+  useEffect(() => {
+    setLastSyncedAt(new Date());
+    setSelectedOrderId((prev) => {
+      if (prev && trackedOrders.some((d) => d.id === prev)) return prev;
+      const activeFirst = trackedOrders.find(
+        (d) => d.status !== "delivered" && d.status !== "cancelled"
+      );
+      return activeFirst?.id || trackedOrders[0]?.id || "";
+    });
+  }, [trackedOrders]);
 
-    const unsubscribe = onSnapshot(
-      orderRef,
-      (snapshot) => {
-        if (snapshot.exists()) {
-          setLiveOrder({
-            id: snapshot.id,
-            ...(snapshot.data() as Omit<Order, "id">),
-          });
-        } else {
-          setLiveOrder(null);
-        }
-        setLoadingDoc(false);
-        setLastSyncedAt(new Date());
-      },
-      (error) => {
-        setLoadingDoc(false);
-        handleFirestoreError(error, OperationType.GET, orderPath);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [authReady, authUser, selectedOrderId]);
-
-  const displayedOrder = useMemo(() => {
-    if (liveOrder) return liveOrder;
+  const displayedOrder: Order | null = useMemo(() => {
     return trackedOrders.find((o) => o.id === selectedOrderId) || null;
-  }, [liveOrder, trackedOrders, selectedOrderId]);
+  }, [trackedOrders, selectedOrderId]);
 
   const progressPercent = useMemo(() => {
     if (!displayedOrder || displayedOrder.status === "cancelled") return 0;
@@ -240,7 +160,7 @@ export const RiderOrderTracker: React.FC = () => {
             </h2>
           </div>
           <p className="text-xs text-stone-500">
-            Live Firestore order stream · Surigao City, Surigao del Norte radar &amp; live movement indicator
+            Live Supabase order stream · Surigao City, Surigao del Norte radar &amp; live movement indicator
           </p>
         </div>
 
@@ -255,18 +175,18 @@ export const RiderOrderTracker: React.FC = () => {
           <Truck className="w-6 h-6 text-stone-400 mx-auto" />
           <div className="space-y-1">
             <p className="text-sm font-semibold text-[#1C1917]">
-              Connect to Firestore Live Tracking
+              Connect to Supabase Live Tracking
             </p>
             <p className="text-xs text-stone-500 max-w-md mx-auto">
-              Sign in with Google to subscribe to real-time order status updates and preview the
-              customer delivery progress bar.
+              Sign in with your Supabase account to subscribe to real-time order status updates and
+              preview the customer delivery progress bar.
             </p>
           </div>
           <button
             onClick={loginWithGoogle}
             className="bg-[#1F7A4C] hover:bg-emerald-800 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
           >
-            Sign in with Google
+            Sign In
           </button>
         </div>
       )}
@@ -292,7 +212,7 @@ export const RiderOrderTracker: React.FC = () => {
             No orders currently assigned or tracked
           </p>
           <p className="text-xs text-stone-500 max-w-md mx-auto">
-            Once an order is placed or accepted into your delivery queue, its real-time Firestore
+            Once an order is placed or accepted into your delivery queue, its real-time Supabase
             status and customer progress indicator will stream here automatically.
           </p>
         </div>

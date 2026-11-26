@@ -2,10 +2,35 @@ services:
   - type: web
     name: choyfood-delivery
     runtime: node
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: NODE_ENV=production npm start
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3000
+      - key: APP_URL
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ADMIN_SESSION_SECRET
+        generateValue: true
+      - key: SUPER_ADMIN_MOBILE
+        sync: false
+      - key: SUPER_ADMIN_PIN
+        sync: false
+      - key: ADMIN_MOBILE
+        sync: false
+      - key: ADMIN_PIN
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: PAYMAYA_SECRET_KEY
+        sync: false

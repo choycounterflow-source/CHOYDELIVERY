@@ -197,7 +197,7 @@ export const COMMUNITY_BLOG_POSTS: BlogPost[] = [
     publishedDate: "September 2026",
     tag: "Trust & Privacy",
     summary:
-      "Inside our zero-trust Firestore architecture that locks Valid IDs inside an encrypted Super Admin Vault.",
+      "Inside our Supabase Row-Level Security architecture that locks Valid IDs inside an encrypted Super Admin Vault.",
     imageUrl: DISH_IMAGES.crispyPata,
     body: [
       "Fake bookings hurt local kitchens and riders alike. Yet customers deserve strong personal privacy when ordering dinner.",

@@ -1,15 +1,16 @@
 export type AppView =
   | "landing"
-  | "customer"
-  | "rider"
-  | "store"
+  | "super_admin"
   | "admin"
+  | "store"
+  | "rider"
+  | "customer"
   | "blog"
   | "about"
   | "contact"
   | "privacy";
 
-export type UserRole = "customer" | "rider" | "store" | "admin";
+export type UserRole = "super_admin" | "admin" | "store" | "rider" | "customer";
 
 export type SaleGroup = "Combo Meal" | "Solo" | "Extra" | "Promo" | "Good for Family";
 
@@ -45,8 +46,39 @@ export interface UserProfile {
   referredCount?: number;
   ratingScore?: number;
   riderPhotoUrl?: string;
+  avatarUrl?: string;
+  nickname?: string;
+  gameBonusPoints?: number;
   createdAt?: unknown;
   updatedAt?: unknown;
+}
+
+export interface RiderOnboardingDocs {
+  uid: string;
+  legalFullName: string;
+  nickname: string;
+  publicHandle: string;
+  address: string;
+  contactNumber: string;
+  age: string;
+  sex: "Male" | "Female" | "Prefer not to say";
+  civilStatus: "Single" | "Married" | "Widowed" | "Separated";
+  licenseNumber: string;
+  licenseExpiry: string;
+  vehicleType: "Motorcycle" | "Bicycle / E-Bike" | "Tricycle";
+  plateNumber: string;
+  orCrNumber: string;
+  orCrExpiry: string;
+  vehiclePhotoName: string;
+  barangayClearanceRef: string;
+  cityClearanceRef: string;
+  policeClearanceRef: string;
+  sssNumber?: string;
+  pagibigNumber?: string;
+  philhealthNumber?: string;
+  tinNumber?: string;
+  cameraVerifiedAt?: string;
+  updatedAt: string;
 }
 
 export interface KycVaultRecord {
@@ -65,6 +97,8 @@ export interface KycVaultRecord {
   updatedAt?: unknown;
 }
 
+export type DishApprovalStatus = "approved" | "pending" | "rejected";
+
 export interface Dish {
   id: string;
   name: string;
@@ -76,6 +110,7 @@ export interface Dish {
   imageUrl: string;
   likes: number;
   available: boolean;
+  approvalStatus?: DishApprovalStatus;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -92,6 +127,12 @@ export interface OrderItemSummary {
   qty: number;
 }
 
+export interface DeliveryCoords {
+  lat: number;
+  lng: number;
+  label?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -106,10 +147,12 @@ export interface Order {
   distanceTier: DistanceTier;
   deliveryFee: number;
   discount: number;
+  tipAmount?: number;
   totalAmount: number;
   paymentMethod: PaymentMethod;
   deliveryAddress: string;
   deliveryNote: string;
+  deliveryCoords?: DeliveryCoords | null;
   step: number;
   status: OrderStatus;
   proofOfDeliveryNote: string;
@@ -158,6 +201,99 @@ export interface PromoCode {
   minSpend: number;
   description: string;
   active: boolean;
+  createdAt?: unknown;
+}
+
+export interface SlidePhoto {
+  id: string;
+  imageUrl: string;
+  caption: string;
+  promoCode?: string;
+}
+
+export interface DonationCampaign {
+  id: string;
+  title: string;
+  description: string;
+  goalAmount: number;
+  raisedAmount: number;
+}
+
+export type StoreOperatingStatus = "open" | "closed" | "coming_soon";
+
+export interface StorePermitChecklist {
+  dti: boolean;
+  bir: boolean;
+  mayors: boolean;
+  sanitary: boolean;
+}
+
+export interface NotificationItem {
+  id: string;
+  audience: "admin" | "customer" | "rider" | "store" | "all";
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface PlatformCmsSettings {
+  bannerText: string;
+  slides: SlidePhoto[];
+  aiKnowledgeBase: string;
+  referralBonusCustomer: number;
+  referralBonusRider: number;
+  choyProMonthlyFee: number;
+  soundEnabled: boolean;
+  storeStatuses: Record<string, StoreOperatingStatus>;
+  storePermits: Record<string, StorePermitChecklist>;
+  dishApprovals: Record<string, DishApprovalStatus>;
+  donationCampaigns: DonationCampaign[];
+  riderShiftAssignments: Record<string, string>;
+}
+
+export interface RewardOption {
+  id: string;
+  title: string;
+  subtitle: string;
+  pointsCost: number;
+  discount: number;
+  minSpend: number;
+}
+
+export interface RewardOrderEntry {
+  orderId: string;
+  orderNumber: string;
+  storeName: string;
+  totalAmount: number;
+  status: OrderStatus;
+  basePoints: number;
+  deliveryBonus: number;
+  totalPoints: number;
+  createdAt?: unknown;
+}
+
+export interface RedeemedRewardVoucher {
+  id: string;
+  code: string;
+  title: string;
+  discount: number;
+  minSpend: number;
+  pointsCost: number;
+  active: boolean;
+  createdAt?: unknown;
+}
+
+export interface ChoyRewardsSummary {
+  lifetimeEarned: number;
+  totalRedeemed: number;
+  availablePoints: number;
+  tierName: "Bronze Diner" | "Silver Foodie" | "Gold Feast VIP";
+  nextTierName: string | null;
+  nextTierPoints: number | null;
+  tierProgressPct: number;
+  orderEntries: RewardOrderEntry[];
+  vouchers: RedeemedRewardVoucher[];
 }
 
 export interface ToastMessage {
@@ -167,7 +303,7 @@ export interface ToastMessage {
   variant: "success" | "error" | "info";
 }
 
-// Validation constants synchronized verbatim with firebase-blueprint.json & firestore.rules
+// Validation constants synchronized with supabase_schema.sql & RLS policies
 export const BLUEPRINT_LIMITS = {
   idPattern: /^[a-zA-Z0-9_-]+$/,
   orderCodePattern: /^CF-[0-9A-Z]+$/,

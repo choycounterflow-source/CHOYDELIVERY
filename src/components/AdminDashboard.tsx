@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import * as d3 from "d3";
-import { useChoyFood } from "../context/FirebaseContext";
-import { FIREBASE_DATABASE_ID, SUPER_ADMIN_EMAIL } from "../lib/firebase";
+import { useChoyFood } from "../context/SupabaseContext";
+import { SUPER_ADMIN_EMAIL } from "../lib/supabase";
 import { KycVaultRecord, UserProfile, UserRole } from "../types/choyfood";
 import { ORDER_STEPS } from "../data/seedData";
 import {
+  Bell,
   Bike,
+  Bot,
+  BrainCircuit,
   Calendar,
+  Check,
   CheckCircle2,
   Crown,
   Database,
@@ -17,6 +21,7 @@ import {
   LifeBuoy,
   Lock,
   Pencil,
+  Plus,
   RefreshCw,
   Server,
   Shield,
@@ -29,30 +34,55 @@ import {
   Trash2,
   UserCog,
   Users,
+  Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
+import { DISH_IMAGES, HERO_FEAST_IMAGE } from "../data/seedData";
+import { calculateHiddenRiderPayout, calculatePlatformMarkup, evaluateMathExpression } from "../lib/fees";
+import { StoreOperatingStatus, StorePermitChecklist } from "../types/choyfood";
 
-const USER_ROLES: UserRole[] = ["customer", "rider", "store", "admin"];
+const USER_ROLES: UserRole[] = ["super_admin", "admin", "store", "rider", "customer"];
 
 export const AdminDashboard: React.FC = () => {
   const {
     authUser,
-    isAdmin,
+    isSuperAdmin,
     dishes,
+    allDishes,
     orders,
     allUsers,
     kycRecords,
     activityLogs,
     supportTickets,
-    loginWithGoogle,
+    openAuthModal,
+    openAskChoy,
     reviewKyc,
     advanceOrder,
     updateUserAdmin,
+    adjustRiderScore,
     resolveSupportTicket,
     dismissActivityLog,
     runSystemCleaner,
-    seedCatalogToFirestore,
+    seedCatalogToSupabase,
+    supabaseProjectLabel,
+    pushToast,
+    cmsSettings,
+    updateCmsSettings,
+    setStoreStatus,
+    setStorePermit,
+    approveDish,
+    notifications,
+    markNotificationRead,
+    markAllNotificationsRead,
+    deleteNotification,
+    allPromos,
+    createPromoCode,
+    togglePromoActive,
+    riderDocsByUid,
   } = useChoyFood();
+
+  const isAdmin = isSuperAdmin;
 
   const [inspectedKyc, setInspectedKyc] = useState<KycVaultRecord | null>(null);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
@@ -63,12 +93,41 @@ export const AdminDashboard: React.FC = () => {
   const [editChoyPro, setEditChoyPro] = useState(false);
   const [savingUser, setSavingUser] = useState(false);
   const [adminTab, setAdminTab] = useState<
-    "overview" | "stores" | "riders" | "customers" | "promos" | "banners" | "schedule" | "insights"
+    | "overview"
+    | "stores"
+    | "riders"
+    | "customers"
+    | "promos"
+    | "banners"
+    | "schedule"
+    | "brain"
+    | "insights"
   >("overview");
 
   const [cleaning, setCleaning] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+
+  // Promo creator state
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoDiscount, setNewPromoDiscount] = useState("30");
+  const [newPromoMinSpend, setNewPromoMinSpend] = useState("250");
+  const [newPromoDesc, setNewPromoDesc] = useState("");
+
+  // CMS Editor state
+  const [draftBannerText, setDraftBannerText] = useState(cmsSettings.bannerText);
+  const [draftRefCust, setDraftRefCust] = useState(String(cmsSettings.referralBonusCustomer));
+  const [draftRefRider, setDraftRefRider] = useState(String(cmsSettings.referralBonusRider));
+  const [draftProFee, setDraftProFee] = useState(String(cmsSettings.choyProMonthlyFee));
+  const [newSlideCaption, setNewSlideCaption] = useState("");
+  const [newSlidePromo, setNewSlidePromo] = useState("");
+  const [newSlideImg, setNewSlideImg] = useState(HERO_FEAST_IMAGE);
+
+  // AI Brain & Safe Math tester state
+  const [draftAiKnowledge, setDraftAiKnowledge] = useState(cmsSettings.aiKnowledgeBase);
+  const [brainQuery, setBrainQuery] = useState("");
+  const [brainTestOutput, setBrainTestOutput] = useState<string | null>(null);
 
   const handleToggleSelectAllOrders = () => {
     if (selectedOrderIds.length === orders.length) {
@@ -93,14 +152,45 @@ export const AdminDashboard: React.FC = () => {
   };
 
   // Compute live + baseline platform metrics
-  const liveOrderRevenue = orders
-    .filter((o) => o.status !== "cancelled")
+  const activeOrders = orders.filter((o) => o.status !== "cancelled");
+  const liveOrderRevenue = activeOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+  const livePlatformMarkup = activeOrders.reduce((sum, o) => sum + calculatePlatformMarkup(o), 0);
+  const codTotal = activeOrders
+    .filter((o) => o.paymentMethod === "COD")
     .reduce((sum, o) => sum + o.totalAmount, 0);
+  const gcashTotal = activeOrders
+    .filter((o) => o.paymentMethod === "GCash")
+    .reduce((sum, o) => sum + o.totalAmount, 0);
+  const cardTotal = activeOrders
+    .filter((o) => o.paymentMethod === "Card")
+    .reduce((sum, o) => sum + o.totalAmount, 0);
+  const walletTotal = activeOrders
+    .filter((o) => o.paymentMethod === "ChoyWallet")
+    .reduce((sum, o) => sum + o.totalAmount, 0);
+
   const totalRevenue = 148920 + liveOrderRevenue;
-  const totalOrdersCount = 1492 + orders.filter((o) => o.status !== "cancelled").length;
+  const totalOrdersCount = 1492 + activeOrders.length;
   const totalLikes = dishes.reduce((sum, d) => sum + d.likes, 0) + 2504;
   const pendingKycCount = kycRecords.filter((k) => k.status === "pending").length;
   const openTicketsCount = supportTickets.filter((t) => t.status === "open").length;
+
+  const customerCount = allUsers.filter((u) => u.role === "customer").length;
+  const riderCount = allUsers.filter((u) => u.role === "rider").length;
+  const storeNamesList = Array.from(
+    new Set([
+      ...Object.keys(cmsSettings.storeStatuses),
+      ...allDishes.map((d) => d.storeName),
+      ...allUsers.filter((u) => u.role === "store").map((u) => u.storeName || u.displayName),
+    ].filter(Boolean))
+  );
+  const openStoresCount = storeNamesList.filter(
+    (name) => (cmsSettings.storeStatuses[name] || "open") === "open"
+  ).length;
+  const adminNotifications = notifications.filter(
+    (n) => n.audience === "admin" || n.audience === "all"
+  );
+  const unreadAdminNotifs = adminNotifications.filter((n) => !n.read).length;
+  const pendingDishes = allDishes.filter((d) => d.approvalStatus === "pending");
 
   const handleCleaner = async () => {
     setCleaning(true);
@@ -114,7 +204,7 @@ export const AdminDashboard: React.FC = () => {
   const handleSeed = async () => {
     setSeeding(true);
     try {
-      await seedCatalogToFirestore();
+      await seedCatalogToSupabase();
     } finally {
       setSeeding(false);
     }
@@ -153,7 +243,7 @@ export const AdminDashboard: React.FC = () => {
       <header className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 border-b border-[#334155] pb-6">
         <div className="space-y-1">
           <p className="text-xs font-mono text-emerald-400">
-            Super Admin Command Center · Zero-Trust Firestore RBAC
+            Dashboard 1 of 5 · Super Admin Command Center · Supabase PostgreSQL RBAC
           </p>
           <h1 className="font-display text-2xl sm:text-3xl font-extrabold text-white">
             Platform Control &amp; Analytics
@@ -164,9 +254,46 @@ export const AdminDashboard: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={() => updateCmsSettings({ soundEnabled: !cmsSettings.soundEnabled })}
+            className="inline-flex items-center gap-1.5 bg-[#1E293B] hover:bg-slate-700 text-slate-200 border border-[#334155] text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors"
+            title="Toggle admin chime alerts"
+          >
+            {cmsSettings.soundEnabled ? (
+              <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <VolumeX className="w-3.5 h-3.5 text-slate-400" />
+            )}
+            <span>{cmsSettings.soundEnabled ? "Sound ON" : "Muted"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsNotifOpen((prev) => !prev)}
+            className="relative inline-flex items-center gap-1.5 bg-[#1E293B] hover:bg-slate-700 text-slate-200 border border-[#334155] text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors"
+          >
+            <Bell className="w-3.5 h-3.5 text-amber-400" />
+            <span>Inbox</span>
+            {unreadAdminNotifs > 0 && (
+              <span className="bg-[#D12D11] text-white font-mono text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums">
+                {unreadAdminNotifs}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={openAskChoy}
+            className="inline-flex items-center gap-1.5 bg-[#1E293B] hover:bg-slate-700 text-amber-300 border border-[#334155] text-xs font-semibold px-3 py-2.5 rounded-lg transition-colors"
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>Ask Choy AI</span>
+          </button>
+
           {!isAdmin && (
             <button
-              onClick={loginWithGoogle}
+              onClick={() => openAuthModal("super_admin")}
               className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-colors whitespace-nowrap"
             >
               Sign in as Super Admin
@@ -191,6 +318,78 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </header>
 
+      {/* Admin Notification Center */}
+      {isNotifOpen && (
+        <section className="bg-[#111827] border border-[#334155] rounded-2xl p-5 space-y-3">
+          <div className="flex items-center justify-between border-b border-[#1E293B] pb-3">
+            <h2 className="font-display text-sm font-bold text-white flex items-center gap-2">
+              <Bell className="w-4 h-4 text-amber-400" />
+              <span>Admin Notification Inbox ({adminNotifications.length})</span>
+            </h2>
+            <div className="flex items-center gap-3 text-xs">
+              {unreadAdminNotifs > 0 && (
+                <button
+                  type="button"
+                  onClick={() => markAllNotificationsRead("admin")}
+                  className="text-emerald-400 hover:underline font-semibold"
+                >
+                  Mark all read
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsNotifOpen(false)}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+          {adminNotifications.length === 0 ? (
+            <p className="text-xs text-slate-400 py-3 text-center">No notifications logged yet.</p>
+          ) : (
+            <div className="divide-y divide-[#1E293B] max-h-60 overflow-y-auto">
+              {adminNotifications.map((n) => (
+                <div
+                  key={n.id}
+                  className={`py-2.5 flex items-start justify-between gap-3 text-xs ${
+                    n.read ? "opacity-65" : ""
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-white">
+                      {!n.read && <span className="inline-block w-2 h-2 rounded-full bg-amber-400 mr-1.5" />}
+                      {n.title}
+                    </p>
+                    <p className="text-slate-300">{n.message}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {!n.read && (
+                      <button
+                        type="button"
+                        onClick={() => markNotificationRead(n.id)}
+                        className="p-1 text-emerald-400 hover:bg-slate-800 rounded"
+                        title="Mark read"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => deleteNotification(n.id)}
+                      className="p-1 text-slate-400 hover:text-rose-400 rounded"
+                      title="Delete notification"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Admin Sidebar & Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
         {/* Admin Sidebar Navigation */}
@@ -203,12 +402,13 @@ export const AdminDashboard: React.FC = () => {
           <nav className="space-y-1">
             {[
               { id: "overview", label: "Overview & Metrics", icon: LayoutDashboard },
-              { id: "stores", label: "Store Accounts Setup", icon: Store },
-              { id: "riders", label: "Rider Accounts (Approval)", icon: Bike },
+              { id: "stores", label: `Stores & Menu (${pendingDishes.length} pending)`, icon: Store },
+              { id: "riders", label: "Riders, Score & Docs", icon: Bike },
               { id: "customers", label: "Customer KYC Enforcement", icon: ShieldCheck },
               { id: "promos", label: "Setup Promo Codes", icon: Tag },
-              { id: "banners", label: "Setup Sliding Banners", icon: Sliders },
+              { id: "banners", label: "Platform CMS & Banners", icon: Sliders },
               { id: "schedule", label: "Rider Schedule (Batch A, B, C)", icon: Calendar },
+              { id: "brain", label: "Ask Choy AI Brain", icon: BrainCircuit },
               { id: "insights", label: "Delivery Insights (D3.js)", icon: TrendingUp },
             ].map((tab) => {
               const Icon = tab.icon;
@@ -224,7 +424,7 @@ export const AdminDashboard: React.FC = () => {
                   }`}
                 >
                   <Icon className={`w-4 h-4 ${active ? "text-white" : "text-slate-400"}`} />
-                  <span>{tab.label}</span>
+                  <span className="truncate">{tab.label}</span>
                 </button>
               );
             })}
@@ -242,32 +442,22 @@ export const AdminDashboard: React.FC = () => {
             <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div className="space-y-1">
               <p className="text-sm font-semibold text-white">
-                Super Admin &amp; Admin Access Credentials
+                Super Admin Authentication Required
               </p>
               <p className="text-xs text-slate-300">
-                Use the official platform credentials or Google Sign-In with <span className="font-mono text-emerald-400">{SUPER_ADMIN_EMAIL}</span>:
+                Sign in with your Super Admin Mobile Number &amp; PIN (or Supabase email{" "}
+                <span className="font-mono text-emerald-400">{SUPER_ADMIN_EMAIL}</span>) to unlock
+                Super Admin controls, KYC approvals, and wallet management.
               </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-                <div className="bg-[#1E293B] border border-[#334155] rounded-lg p-3 text-xs space-y-1">
-                  <p className="font-bold text-amber-400">Super Admin Credentials</p>
-                  <p className="text-slate-300">Mobile: <span className="font-mono text-white">09361223978</span></p>
-                  <p className="text-slate-300">PIN / Code: <span className="font-mono text-white">051690</span></p>
-                </div>
-                <div className="bg-[#1E293B] border border-[#334155] rounded-lg p-3 text-xs space-y-1">
-                  <p className="font-bold text-sky-400">Admin Credentials</p>
-                  <p className="text-slate-300">Mobile: <span className="font-mono text-white">0951294785</span></p>
-                  <p className="text-slate-300">PIN / Code: <span className="font-mono text-white">095129</span></p>
-                </div>
-              </div>
             </div>
           </div>
-          {!authUser && (
+          {!isAdmin && (
             <div className="flex items-center gap-3 pt-1">
               <button
-                onClick={loginWithGoogle}
+                onClick={() => openAuthModal("super_admin")}
                 className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-4 py-2.5 rounded-lg whitespace-nowrap shrink-0"
               >
-                Sign in with Google ({SUPER_ADMIN_EMAIL})
+                Super Admin Sign In
               </button>
             </div>
           )}
@@ -276,7 +466,7 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Section 1: App Overview Analytics */}
       <section className="space-y-4">
-        <h2 className="font-display text-base font-bold text-slate-200">App Overview Analytics</h2>
+        <h2 className="font-display text-base font-bold text-slate-200">App Overview Analytics &amp; Live Payment Breakdown</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-5 space-y-2.5">
             <div className="flex items-center justify-between text-xs text-slate-400">
@@ -286,8 +476,8 @@ export const AdminDashboard: React.FC = () => {
             <p className="font-display text-2xl font-extrabold text-white tabular-nums">
               ₱{totalRevenue.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
             </p>
-            <p className="text-xs text-slate-400 pt-2 border-t border-[#334155] font-mono tabular-nums">
-              COD 62% · GCash 28% · Wallet 10%
+            <p className="text-[11px] text-emerald-400 pt-2 border-t border-[#334155] font-mono tabular-nums">
+              Platform Markup: ₱{livePlatformMarkup.toFixed(2)}
             </p>
           </div>
 
@@ -299,35 +489,55 @@ export const AdminDashboard: React.FC = () => {
             <p className="font-display text-2xl font-extrabold text-white tabular-nums">
               {totalOrdersCount.toLocaleString()} Orders
             </p>
-            <p className="text-xs text-emerald-400 pt-2 border-t border-[#334155] tabular-nums">
-              99.2% fulfillment rate · {orders.length} live in Firestore
+            <p className="text-[11px] text-emerald-400 pt-2 border-t border-[#334155] tabular-nums">
+              {activeOrders.length} active · {orders.length} total live
             </p>
           </div>
 
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-5 space-y-2.5">
             <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Registered Accounts</span>
+              <span>Fleet &amp; Accounts</span>
               <Users className="w-4 h-4 text-sky-400" />
             </div>
             <p className="font-display text-2xl font-extrabold text-white tabular-nums">
-              {(1348 + allUsers.length).toLocaleString()} Visits
+              {customerCount} Cust · {riderCount} Riders
             </p>
-            <p className="text-xs text-slate-400 pt-2 border-t border-[#334155] tabular-nums">
-              {allUsers.length} synced Firestore account{allUsers.length === 1 ? "" : "s"}
+            <p className="text-[11px] text-slate-400 pt-2 border-t border-[#334155] tabular-nums">
+              {openStoresCount}/{storeNamesList.length} partner stores open
             </p>
           </div>
 
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-5 space-y-2.5">
             <div className="flex items-center justify-between text-xs text-slate-400">
-              <span>Total Dish Favorites</span>
+              <span>Dish Favorites &amp; Catalog</span>
               <Heart className="w-4 h-4 text-rose-400" />
             </div>
             <p className="font-display text-2xl font-extrabold text-white tabular-nums">
               {totalLikes.toLocaleString()} Likes
             </p>
-            <p className="text-xs text-slate-400 pt-2 border-t border-[#334155]">
-              Across {dishes.length} live partner dishes
+            <p className="text-[11px] text-slate-400 pt-2 border-t border-[#334155]">
+              {dishes.length} approved · {pendingDishes.length} pending review
             </p>
+          </div>
+        </div>
+
+        {/* Live Payment Method Breakdown */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div className="bg-[#111827] border border-[#334155] rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-slate-400">Total COD</span>
+            <span className="font-mono font-bold text-white tabular-nums">₱{codTotal.toFixed(2)}</span>
+          </div>
+          <div className="bg-[#111827] border border-[#334155] rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-slate-400">GCash / PayMaya</span>
+            <span className="font-mono font-bold text-sky-400 tabular-nums">₱{gcashTotal.toFixed(2)}</span>
+          </div>
+          <div className="bg-[#111827] border border-[#334155] rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-slate-400">Card / Stripe</span>
+            <span className="font-mono font-bold text-emerald-400 tabular-nums">₱{cardTotal.toFixed(2)}</span>
+          </div>
+          <div className="bg-[#111827] border border-[#334155] rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-slate-400">ChoyWallet</span>
+            <span className="font-mono font-bold text-amber-300 tabular-nums">₱{walletTotal.toFixed(2)}</span>
           </div>
         </div>
       </section>
@@ -563,7 +773,7 @@ export const AdminDashboard: React.FC = () => {
 
         {orders.length === 0 ? (
           <p className="text-xs text-slate-400 py-4 text-center">
-            No live orders in Firestore yet. Place an order in Customer View to inspect and verify
+            No live orders in Supabase yet. Place an order in Customer View to inspect and verify
             Step 2 (Admin Checked).
           </p>
         ) : (
@@ -800,13 +1010,13 @@ export const AdminDashboard: React.FC = () => {
           <div className="bg-[#1E293B] border border-[#334155] rounded-xl p-5 space-y-2">
             <div className="flex items-center justify-between text-xs">
               <span className="text-slate-400 flex items-center gap-1.5">
-                <Database className="w-4 h-4 text-emerald-400" /> Firestore Database
+                <Database className="w-4 h-4 text-emerald-400" /> Supabase Database
               </span>
-              <span className="text-emerald-400 font-semibold">Connected</span>
+              <span className="text-emerald-400 font-semibold">Active</span>
             </div>
-            <p className="text-xs font-mono text-white break-all">{FIREBASE_DATABASE_ID}</p>
+            <p className="text-xs font-mono text-white break-all">{supabaseProjectLabel}</p>
             <p className="text-xs text-slate-400">
-              Zero-trust security rules deployed with isolated /kyc_vault access.
+              Row-Level Security (RLS) enabled with isolated kyc_vault table access.
             </p>
           </div>
 
@@ -1021,25 +1231,128 @@ export const AdminDashboard: React.FC = () => {
           )}
 
           {adminTab === "stores" && (
-            <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6">
-              <div>
-                <h2 className="font-display text-xl font-bold text-white">Store Accounts Setup &amp; Management</h2>
-                <p className="text-xs text-slate-400">Create, assign, and manage partner store accounts across Surigao City &amp; Cebu.</p>
-              </div>
-              <div className="divide-y divide-[#1E293B] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
-                {allUsers.filter(u => u.role === "store").length === 0 ? (
-                  <p className="p-4 text-xs text-slate-400">No partner stores registered yet. Use user management below to assign store roles.</p>
-                ) : (
-                  allUsers.filter(u => u.role === "store").map(u => (
-                    <div key={u.uid} className="p-4 flex items-center justify-between gap-4 text-xs">
-                      <div>
-                        <p className="font-bold text-white text-sm">{u.storeName || u.displayName}</p>
-                        <p className="text-slate-400 font-mono">Owner UID: {u.uid} · Role: Store Partner</p>
+            <div className="space-y-6">
+              <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-5">
+                <div>
+                  <h2 className="font-display text-xl font-bold text-white">Store Operating Status &amp; Permits Control</h2>
+                  <p className="text-xs text-slate-400">
+                    Toggle partner stores Open, Closed, or Coming Soon and verify DTI, BIR, Mayor&apos;s, and Sanitary permits.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {storeNamesList.map((storeName) => {
+                    const status: StoreOperatingStatus = cmsSettings.storeStatuses[storeName] || "open";
+                    const permits: StorePermitChecklist = cmsSettings.storePermits[storeName] || {
+                      dti: false,
+                      bir: false,
+                      mayors: false,
+                      sanitary: false,
+                    };
+                    return (
+                      <div
+                        key={storeName}
+                        className="p-4 rounded-xl bg-[#1E293B] border border-[#334155] space-y-3 text-xs"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <p className="font-bold text-white text-sm">{storeName}</p>
+                          <div className="flex items-center gap-1.5">
+                            {(["open", "closed", "coming_soon"] as StoreOperatingStatus[]).map((st) => (
+                              <button
+                                key={st}
+                                type="button"
+                                disabled={!isAdmin}
+                                onClick={() => setStoreStatus(storeName, st)}
+                                className={`px-3 py-1.5 rounded-lg font-semibold capitalize transition-colors ${
+                                  status === st
+                                    ? st === "open"
+                                      ? "bg-emerald-600 text-white"
+                                      : st === "closed"
+                                      ? "bg-rose-600 text-white"
+                                      : "bg-amber-600 text-white"
+                                    : "bg-[#0B1120] text-slate-400 hover:text-white border border-[#334155]"
+                                }`}
+                              >
+                                {st.replace("_", " ")}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#334155]">
+                          <span className="text-slate-400 mr-1">Permits:</span>
+                          {(["dti", "bir", "mayors", "sanitary"] as (keyof StorePermitChecklist)[]).map((pk) => (
+                            <button
+                              key={pk}
+                              type="button"
+                              disabled={!isAdmin}
+                              onClick={() => setStorePermit(storeName, pk, !permits[pk])}
+                              className={`px-2.5 py-1 rounded-md font-mono uppercase text-[11px] font-bold border ${
+                                permits[pk]
+                                  ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
+                                  : "bg-[#0B1120] border-[#334155] text-slate-400"
+                              }`}
+                            >
+                              {pk} {permits[pk] ? "✓" : "○"}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-400 font-bold">Active Store</span>
-                    </div>
-                  ))
-                )}
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Store Menu Dish Approval Queue */}
+              <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-display text-lg font-bold text-white">Store Menu Dish Approval Queue</h3>
+                    <p className="text-xs text-slate-400">
+                      Dishes submitted by partner stores remain hidden from customers until approved here.
+                    </p>
+                  </div>
+                  <span className="font-mono text-xs text-amber-300">
+                    {pendingDishes.length} pending
+                  </span>
+                </div>
+
+                <div className="divide-y divide-[#334155] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
+                  {allDishes.map((d) => {
+                    const approval = d.approvalStatus || "approved";
+                    return (
+                      <div key={d.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div>
+                          <p className="font-bold text-white">
+                            {d.name} <span className="font-mono text-amber-300">₱{d.price.toFixed(2)}</span>
+                          </p>
+                          <p className="text-slate-400">
+                            {d.storeName} · {d.saleGroup} · Status:{" "}
+                            <span className="capitalize font-semibold text-white">{approval}</span>
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            disabled={!isAdmin || approval === "approved"}
+                            onClick={() => approveDish(d.id, "approved")}
+                            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={!isAdmin || approval === "rejected"}
+                            onClick={() => approveDish(d.id, "rejected")}
+                            className="bg-slate-700 hover:bg-rose-600 disabled:opacity-40 text-white font-semibold px-3 py-1.5 rounded-lg"
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
@@ -1047,22 +1360,72 @@ export const AdminDashboard: React.FC = () => {
           {adminTab === "riders" && (
             <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6">
               <div>
-                <h2 className="font-display text-xl font-bold text-white">Rider Accounts &amp; Admin Approval</h2>
-                <p className="text-xs text-slate-400">Review rider verification clearances, driver's licenses, and approve rider dispatch codes.</p>
+                <h2 className="font-display text-xl font-bold text-white">Rider Fleet, Score Adjuster &amp; Clearances</h2>
+                <p className="text-xs text-slate-400">
+                  Adjust rider performance scores (+1 / -1) to determine Batch A / B / C shift priority and inspect submitted documents.
+                </p>
               </div>
-              <div className="divide-y divide-[#1E293B] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
-                {allUsers.filter(u => u.role === "rider").length === 0 ? (
+              <div className="divide-y divide-[#334155] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
+                {allUsers.filter((u) => u.role === "rider").length === 0 ? (
                   <p className="p-4 text-xs text-slate-400">No delivery riders registered yet.</p>
                 ) : (
-                  allUsers.filter(u => u.role === "rider").map(u => (
-                    <div key={u.uid} className="p-4 flex items-center justify-between gap-4 text-xs">
-                      <div>
-                        <p className="font-bold text-white text-sm">{u.displayName}</p>
-                        <p className="text-slate-400 font-mono">Rider Code: {u.riderCode || "JC389"} · Status: Approved</p>
-                      </div>
-                      <span className="px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-400 font-bold">Approved Rider</span>
-                    </div>
-                  ))
+                  allUsers
+                    .filter((u) => u.role === "rider")
+                    .map((u) => {
+                      const scorePts = Math.round((u.ratingScore ?? 4.7) * 20);
+                      const batch = scorePts >= 85 ? "Batch A" : scorePts >= 75 ? "Batch B" : "Batch C";
+                      const docs = riderDocsByUid[u.uid];
+                      const riderCompleted = orders.filter(
+                        (o) => o.status === "delivered" && (o.riderId === u.uid || o.riderCode === u.riderCode)
+                      );
+                      const payoutEarned = riderCompleted.reduce(
+                        (sum, o) => sum + calculateHiddenRiderPayout(o),
+                        0
+                      );
+                      return (
+                        <div key={u.uid} className="p-4 space-y-3 text-xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <div>
+                              <p className="font-bold text-white text-sm">
+                                {u.displayName}{" "}
+                                <span className="font-mono text-emerald-400">({u.riderCode || "JC389"})</span>
+                              </p>
+                              <p className="text-slate-400 font-mono">
+                                Score: {scorePts}/100 ({batch}) · Payouts: ₱{payoutEarned.toFixed(2)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                disabled={!isAdmin}
+                                onClick={() => adjustRiderScore(u, -1)}
+                                className="bg-[#0B1120] hover:bg-rose-700 border border-[#334155] text-white font-mono font-bold px-3 py-1.5 rounded-lg"
+                              >
+                                -1 Score
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!isAdmin}
+                                onClick={() => adjustRiderScore(u, 1)}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-mono font-bold px-3 py-1.5 rounded-lg"
+                              >
+                                +1 Score
+                              </button>
+                            </div>
+                          </div>
+                          {docs && (
+                            <div className="p-3 rounded-lg bg-[#0B1120] border border-[#334155] grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] text-slate-300">
+                              <span>Legal: <strong className="text-white">{docs.legalFullName}</strong></span>
+                              <span>License: <strong className="font-mono text-amber-300">{docs.licenseNumber || "N/A"}</strong></span>
+                              <span>Plate: <strong className="font-mono text-emerald-300">{docs.plateNumber || "N/A"}</strong></span>
+                              <span>Brgy Clr: {docs.barangayClearanceRef || "Pending"}</span>
+                              <span>Police Clr: {docs.policeClearanceRef || "Pending"}</span>
+                              <span>OR/CR: {docs.orCrNumber || "Pending"}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                 )}
               </div>
             </div>
@@ -1079,7 +1442,7 @@ export const AdminDashboard: React.FC = () => {
                 <p>Unverified customer accounts are strictly blocked from placing food or delivery orders until Super Admin approves their government valid ID vault record.</p>
               </div>
               <div className="divide-y divide-[#1E293B] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
-                {kycRecords.map(k => (
+                {kycRecords.map((k) => (
                   <div key={k.uid} className="p-4 flex items-center justify-between gap-4 text-xs">
                     <div>
                       <p className="font-bold text-white text-sm">{k.displayName} ({k.realLegalName})</p>
@@ -1108,48 +1471,386 @@ export const AdminDashboard: React.FC = () => {
           {adminTab === "promos" && (
             <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6">
               <div>
-                <h2 className="font-display text-xl font-bold text-white">Setup Promo Codes</h2>
-                <p className="text-xs text-slate-400">Manage active discount vouchers stored in Firestore.</p>
+                <h2 className="font-display text-xl font-bold text-white">Setup &amp; Manage Promo Codes</h2>
+                <p className="text-xs text-slate-400">Create new promo vouchers or pause/reactivate existing codes live.</p>
               </div>
+
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const ok = await createPromoCode({
+                    code: newPromoCode,
+                    discount: Number(newPromoDiscount) || 25,
+                    minSpend: Number(newPromoMinSpend) || 200,
+                    description: newPromoDesc || `₱${newPromoDiscount} OFF on orders ₱${newPromoMinSpend}+`,
+                  });
+                  if (ok) {
+                    setNewPromoCode("");
+                    setNewPromoDesc("");
+                  }
+                }}
+                className="p-4 rounded-xl bg-[#1E293B] border border-[#334155] grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end"
+              >
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Promo Code</label>
+                  <input
+                    type="text"
+                    required
+                    value={newPromoCode}
+                    onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                    placeholder="CHOY30"
+                    className="w-full bg-[#0B1120] border border-[#334155] text-white font-mono px-3 py-2 rounded-lg uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Discount (₱)</label>
+                  <input
+                    type="number"
+                    min={5}
+                    value={newPromoDiscount}
+                    onChange={(e) => setNewPromoDiscount(e.target.value)}
+                    className="w-full bg-[#0B1120] border border-[#334155] text-white font-mono px-3 py-2 rounded-lg"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-300 font-semibold mb-1">Min Spend (₱)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newPromoMinSpend}
+                    onChange={(e) => setNewPromoMinSpend(e.target.value)}
+                    className="w-full bg-[#0B1120] border border-[#334155] text-white font-mono px-3 py-2 rounded-lg"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={!isAdmin}
+                  className="inline-flex items-center justify-center gap-1.5 bg-[#D12D11] hover:bg-[#A61F09] disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-lg h-[38px]"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create Promo</span>
+                </button>
+                <div className="sm:col-span-4">
+                  <input
+                    type="text"
+                    value={newPromoDesc}
+                    onChange={(e) => setNewPromoDesc(e.target.value)}
+                    placeholder="Description (e.g. Weekend Fiesta ₱30 Off)"
+                    className="w-full bg-[#0B1120] border border-[#334155] text-slate-200 px-3 py-2 rounded-lg"
+                  />
+                </div>
+              </form>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="p-4 rounded-xl bg-[#1E293B] border border-[#334155] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-amber-400 text-sm">CHOY25</span>
-                    <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">Active</span>
+                {allPromos.map((p) => (
+                  <div key={p.id} className="p-4 rounded-xl bg-[#1E293B] border border-[#334155] space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="font-mono font-bold text-amber-400 text-sm">{p.code}</span>
+                      <button
+                        type="button"
+                        disabled={!isAdmin}
+                        onClick={() => togglePromoActive(p)}
+                        className={`px-2.5 py-0.5 rounded font-bold ${
+                          p.active
+                            ? "bg-emerald-500/20 text-emerald-400"
+                            : "bg-slate-700 text-slate-300"
+                        }`}
+                      >
+                        {p.active ? "Active" : "Paused"}
+                      </button>
+                    </div>
+                    <p className="text-slate-300">{p.description}</p>
+                    <p className="text-[11px] font-mono text-slate-400">
+                      ₱{p.discount} OFF · Min. Spend ₱{p.minSpend}
+                    </p>
                   </div>
-                  <p className="text-slate-300">₱25 OFF on orders ₱250+</p>
-                </div>
-                <div className="p-4 rounded-xl bg-[#1E293B] border border-[#334155] space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-amber-400 text-sm">SURIGAO100</span>
-                    <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded font-bold">Active</span>
-                  </div>
-                  <p className="text-slate-300">₱100 OFF on orders ₱1,000+</p>
-                </div>
+                ))}
               </div>
             </div>
           )}
 
           {adminTab === "banners" && (
-            <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6">
+            <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6 text-xs">
               <div>
-                <h2 className="font-display text-xl font-bold text-white">Setup Sliding / Moving Campaign Banners</h2>
-                <p className="text-xs text-slate-400">Configure editorial spotlight banners and marquee announcements.</p>
+                <h2 className="font-display text-xl font-bold text-white">Platform CMS, Sliding Banners &amp; Fees Setup</h2>
+                <p className="text-slate-400">
+                  Configure moving marquee text, sliding campaign photos, Choy Pro monthly fee, and referral rewards.
+                </p>
               </div>
-              <div className="p-5 bg-[#1E293B] border border-[#334155] rounded-xl space-y-3 text-xs">
-                <p className="font-semibold text-white">Active Marquee Banner Text:</p>
-                <input
-                  type="text"
-                  defaultValue="Use promo code CHOY25 for ₱25 off orders ₱250+ · Or unlock ₱0 delivery with Choy Pro"
-                  className="w-full bg-[#0B1120] border border-[#334155] text-slate-200 px-3 py-2 rounded-lg font-mono text-xs"
+
+              <div className="p-5 bg-[#1E293B] border border-[#334155] rounded-xl space-y-4">
+                <div>
+                  <label className="block font-semibold text-white mb-1">Moving Marquee Banner Text</label>
+                  <input
+                    type="text"
+                    value={draftBannerText}
+                    onChange={(e) => setDraftBannerText(e.target.value)}
+                    className="w-full bg-[#0B1120] border border-[#334155] text-slate-200 px-3 py-2 rounded-lg font-mono"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Customer Referral Bonus (₱)</label>
+                    <input
+                      type="number"
+                      value={draftRefCust}
+                      onChange={(e) => setDraftRefCust(e.target.value)}
+                      className="w-full bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Rider Referral Bonus (₱)</label>
+                    <input
+                      type="number"
+                      value={draftRefRider}
+                      onChange={(e) => setDraftRefRider(e.target.value)}
+                      className="w-full bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Choy Pro Monthly Fee (₱)</label>
+                    <input
+                      type="number"
+                      value={draftProFee}
+                      onChange={(e) => setDraftProFee(e.target.value)}
+                      className="w-full bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg font-mono"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={() => {
+                    updateCmsSettings({
+                      bannerText: draftBannerText,
+                      referralBonusCustomer: Math.max(0, Number(draftRefCust) || 50),
+                      referralBonusRider: Math.max(0, Number(draftRefRider) || 150),
+                      choyProMonthlyFee: Math.max(49, Number(draftProFee) || 149),
+                    });
+                    pushToast("CMS Saved", "Marquee banner & platform bonus rates updated.", "success");
+                  }}
+                  className="bg-[#D12D11] hover:bg-[#A61F09] disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-lg"
+                >
+                  Save CMS Settings
+                </button>
+              </div>
+
+              {/* Sliding Photo Carousel Editor */}
+              <div className="p-5 bg-[#1E293B] border border-[#334155] rounded-xl space-y-4">
+                <h3 className="font-display text-sm font-bold text-white">Sliding Photo Carousel ({cmsSettings.slides.length} slides)</h3>
+                <div className="space-y-2.5">
+                  {cmsSettings.slides.map((s) => (
+                    <div key={s.id} className="flex items-center justify-between gap-3 bg-[#0B1120] border border-[#334155] p-3 rounded-lg">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img src={s.imageUrl} alt={s.caption} className="w-12 h-9 rounded object-cover shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-white font-semibold truncate">{s.caption}</p>
+                          <p className="text-amber-300 font-mono text-[11px]">{s.promoCode || "No code"}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!isAdmin || cmsSettings.slides.length <= 1}
+                        onClick={() =>
+                          updateCmsSettings({
+                            slides: cmsSettings.slides.filter((item) => item.id !== s.id),
+                          })
+                        }
+                        className="text-slate-400 hover:text-rose-400 disabled:opacity-30 p-1.5"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-[#334155]">
+                  <input
+                    type="text"
+                    value={newSlideCaption}
+                    onChange={(e) => setNewSlideCaption(e.target.value)}
+                    placeholder="New slide caption..."
+                    className="bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg"
+                  />
+                  <select
+                    value={newSlideImg}
+                    onChange={(e) => setNewSlideImg(e.target.value)}
+                    className="bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg"
+                  >
+                    <option value={HERO_FEAST_IMAGE}>Fiesta Feast Banner</option>
+                    <option value={DISH_IMAGES.lechonKawali}>Lechon Kawali</option>
+                    <option value={DISH_IMAGES.sizzlingSisig}>Sizzling Sisig</option>
+                    <option value={DISH_IMAGES.crispyPata}>Crispy Pata</option>
+                    <option value={DISH_IMAGES.haloHalo}>Halo-Halo Supreme</option>
+                    <option value={DISH_IMAGES.porkBbq}>Pork BBQ</option>
+                  </select>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newSlidePromo}
+                      onChange={(e) => setNewSlidePromo(e.target.value.toUpperCase())}
+                      placeholder="Code"
+                      className="w-24 bg-[#0B1120] border border-[#334155] text-white font-mono px-2.5 py-2 rounded-lg uppercase"
+                    />
+                    <button
+                      type="button"
+                      disabled={!isAdmin || !newSlideCaption.trim()}
+                      onClick={() => {
+                        updateCmsSettings({
+                          slides: [
+                            ...cmsSettings.slides,
+                            {
+                              id: `slide-${Date.now()}`,
+                              imageUrl: newSlideImg,
+                              caption: newSlideCaption.trim(),
+                              promoCode: newSlidePromo.trim() || undefined,
+                            },
+                          ],
+                        });
+                        setNewSlideCaption("");
+                        setNewSlidePromo("");
+                        pushToast("Slide Added", "Carousel slide published to Customer Hub.", "success");
+                      }}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-3 py-2 rounded-lg"
+                    >
+                      Add Slide
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {adminTab === "schedule" && (
+            <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6 text-xs">
+              <div>
+                <h2 className="font-display text-xl font-bold text-white">Rider Shift Schedule Management (Batch A, B, C)</h2>
+                <p className="text-slate-400">
+                  Assign priority dispatch shifts to active riders based on their batch reliability score.
+                </p>
+              </div>
+              <div className="divide-y divide-[#334155] border border-[#334155] rounded-xl overflow-hidden bg-[#1E293B]">
+                {allUsers.filter((u) => u.role === "rider").length === 0 ? (
+                  <p className="p-4 text-slate-400">No riders registered yet.</p>
+                ) : (
+                  allUsers
+                    .filter((u) => u.role === "rider")
+                    .map((r) => {
+                      const scorePts = Math.round((r.ratingScore ?? 4.7) * 20);
+                      const batch = scorePts >= 85 ? "Batch A" : scorePts >= 75 ? "Batch B" : "Batch C";
+                      const assigned =
+                        cmsSettings.riderShiftAssignments[r.uid] || "Morning Batch (6AM - 2PM)";
+                      return (
+                        <div key={r.uid} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-white text-sm">
+                              {r.displayName} · <span className="text-emerald-400 font-mono">{batch}</span>
+                            </p>
+                            <p className="text-slate-400 font-mono">Rider {r.riderCode || "JC389"}</p>
+                          </div>
+                          <select
+                            value={assigned}
+                            disabled={!isAdmin}
+                            onChange={(e) => {
+                              updateCmsSettings({
+                                riderShiftAssignments: {
+                                  ...cmsSettings.riderShiftAssignments,
+                                  [r.uid]: e.target.value,
+                                },
+                              });
+                              pushToast("Shift Assigned", `${r.displayName} → ${e.target.value}`, "success");
+                            }}
+                            className="bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg"
+                          >
+                            <option value="Morning Batch (6AM - 2PM)">Morning Batch (6AM - 2PM)</option>
+                            <option value="Afternoon Batch (2PM - 10PM)">Afternoon Batch (2PM - 10PM)</option>
+                            <option value="Night Owl (10PM - 6AM)">Night Owl (10PM - 6AM)</option>
+                            <option value="Full Day Double Shift">Full Day Double Shift</option>
+                          </select>
+                        </div>
+                      );
+                    })
+                )}
+              </div>
+            </div>
+          )}
+
+          {adminTab === "brain" && (
+            <div className="bg-[#111827] border border-[#334155] rounded-2xl p-6 sm:p-8 space-y-6 text-xs">
+              <div>
+                <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
+                  <BrainCircuit className="w-5 h-5 text-amber-400" />
+                  <span>Ask Choy AI Knowledge Base &amp; Safe Math Tester</span>
+                </h2>
+                <p className="text-slate-400">
+                  Update the custom instructions injected into Ask Choy AI and test safe math / menu lookups.
+                </p>
+              </div>
+
+              <div className="p-5 bg-[#1E293B] border border-[#334155] rounded-xl space-y-3">
+                <label className="block font-semibold text-white">Live AI Knowledge Base Instructions</label>
+                <textarea
+                  rows={4}
+                  value={draftAiKnowledge}
+                  onChange={(e) => setDraftAiKnowledge(e.target.value)}
+                  className="w-full bg-[#0B1120] border border-[#334155] text-slate-200 p-3 rounded-lg font-mono text-xs"
                 />
                 <button
                   type="button"
-                  onClick={() => alert("Moving banner announcement updated!")}
-                  className="bg-[#D12D11] hover:bg-[#A61F09] text-white font-semibold px-4 py-2 rounded-lg"
+                  disabled={!isAdmin}
+                  onClick={() => {
+                    updateCmsSettings({ aiKnowledgeBase: draftAiKnowledge });
+                    pushToast("AI Brain Updated", "Ask Choy AI system context saved.", "success");
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold px-4 py-2 rounded-lg"
                 >
-                  Save Banner Announcement
+                  Save AI Brain Context
                 </button>
+              </div>
+
+              <div className="p-5 bg-[#1E293B] border border-[#334155] rounded-xl space-y-3">
+                <p className="font-semibold text-white">Safe Math &amp; Catalog Price Tester</p>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={brainQuery}
+                    onChange={(e) => setBrainQuery(e.target.value)}
+                    placeholder="Try '(195 * 2) + 25' or search 'Sisig'"
+                    className="flex-1 bg-[#0B1120] border border-[#334155] text-white px-3 py-2 rounded-lg font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const mathVal = evaluateMathExpression(brainQuery);
+                      if (mathVal !== null) {
+                        setBrainTestOutput(`Safe Math Result: ${mathVal}`);
+                        return;
+                      }
+                      const q = brainQuery.trim().toLowerCase();
+                      const found = dishes.filter(
+                        (d) =>
+                          d.name.toLowerCase().includes(q) || d.storeName.toLowerCase().includes(q)
+                      );
+                      if (found.length > 0) {
+                        setBrainTestOutput(
+                          found.map((d) => `${d.name} (${d.storeName}) — ₱${d.price}`).join(" | ")
+                        );
+                      } else {
+                        setBrainTestOutput(
+                          `Knowledge Match: ${cmsSettings.aiKnowledgeBase.slice(0, 180)}...`
+                        );
+                      }
+                    }}
+                    className="bg-sky-600 hover:bg-sky-500 text-white font-semibold px-4 py-2 rounded-lg"
+                  >
+                    Test Query
+                  </button>
+                </div>
+                {brainTestOutput && (
+                  <p className="p-3 rounded-lg bg-[#0B1120] border border-[#334155] font-mono text-emerald-300">
+                    {brainTestOutput}
+                  </p>
+                )}
               </div>
             </div>
           )}

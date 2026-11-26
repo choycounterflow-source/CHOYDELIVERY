@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useChoyFood } from "../context/FirebaseContext";
+import { useChoyFood } from "../context/SupabaseContext";
 import { IdType } from "../types/choyfood";
 import { CheckCircle2, Lock, ShieldCheck, X } from "lucide-react";
 
@@ -98,10 +98,10 @@ export const KycModal: React.FC<KycModalProps> = ({ isOpen, onClose }) => {
             <ShieldCheck className="w-10 h-10 text-[#D12D11] mx-auto" />
             <div className="space-y-1">
               <p className="font-display text-base font-bold text-[#1C1917]">
-                Sign in with Google first
+                Sign in to your account first
               </p>
               <p className="text-xs text-stone-600 max-w-sm mx-auto">
-                Your KYC vault document is bound strictly to your authenticated Firebase UID so
+                Your KYC vault record is bound strictly to your authenticated Supabase account so
                 stores and riders can never read it.
               </p>
             </div>
@@ -109,7 +109,7 @@ export const KycModal: React.FC<KycModalProps> = ({ isOpen, onClose }) => {
               onClick={loginWithGoogle}
               className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-5 py-2.5 rounded-lg transition-colors"
             >
-              Sign in with Google
+              Sign In / Create Account
             </button>
           </div>
         ) : myKycRecord && myKycRecord.status !== "rejected" ? (

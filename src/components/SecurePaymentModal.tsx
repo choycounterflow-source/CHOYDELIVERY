@@ -24,11 +24,13 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
   const [gcashOtp, setGcashOtp] = useState("");
   const [step, setStep] = useState<"input" | "processing" | "success">("input");
   const [reference, setReference] = useState("");
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPaymentError(null);
     setStep("processing");
     try {
       const res = await fetch("/api/create-payment-intent", {
@@ -44,7 +46,7 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
       setStep("success");
     } catch (err: any) {
       console.error(err);
-      alert(err.message || "Payment processing failed.");
+      setPaymentError(err?.message || "Payment processing failed.");
       setStep("input");
     }
   };
@@ -80,6 +82,11 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
                 </p>
               </div>
             </div>
+            {paymentError && (
+              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-xs text-rose-800 font-medium">
+                {paymentError}
+              </div>
+            )}
 
             {method === "Card" ? (
               <>
@@ -167,7 +174,7 @@ export const SecurePaymentModal: React.FC<SecurePaymentModalProps> = ({
                     className="w-full px-3.5 py-2.5 rounded-lg border border-stone-300 font-mono text-sm tracking-widest tabular-nums text-center"
                   />
                   <p className="text-[11px] text-stone-500 mt-1">
-                    Demo OTP: enter any 6 digits (e.g. 555888)
+                    Enter the 6-digit verification code sent to your registered mobile number.
                   </p>
                 </div>
               </>

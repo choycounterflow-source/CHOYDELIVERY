@@ -1,32 +1,51 @@
 import React, { useEffect, useState } from "react";
-import { AppView, CartItem, Dish, Order } from "./types/choyfood";
+import { AppView, CartItem, Dish, Order, UserRole } from "./types/choyfood";
 import { DISH_IMAGES } from "./data/seedData";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { FirebaseProvider, useChoyFood } from "./context/FirebaseContext";
+import { SupabaseProvider, useChoyFood } from "./context/SupabaseContext";
 import { PublicPages } from "./components/PublicPages";
-import { CustomerDashboard } from "./components/CustomerDashboard";
+import { CustomerDashboard, CustomerTab } from "./components/CustomerDashboard";
 import { RiderDashboard } from "./components/RiderDashboard";
 import { StoreDashboard } from "./components/StoreDashboard";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { AdminOpsDashboard } from "./components/AdminOpsDashboard";
+import { SidebarDrawer } from "./components/SidebarDrawer";
 import { KycModal } from "./components/KycModal";
+import { AuthModal } from "./components/AuthModal";
 import { CartDrawer } from "./components/CartDrawer";
 import { AskChoyDrawer } from "./components/AskChoyDrawer";
-import { Download, LogOut, ShieldCheck, ShoppingBag, X } from "lucide-react";
+import { Download, LogIn, LogOut, Menu, ShieldCheck, ShoppingBag, X } from "lucide-react";
 
-const ROLE_TABS: { id: AppView; label: string }[] = [
-  { id: "customer", label: "Customer View" },
-  { id: "rider", label: "Rider Portal" },
-  { id: "store", label: "Store Board" },
-  { id: "admin", label: "Super Admin" },
+const ROLE_TABS: { id: AppView; role: UserRole; label: string }[] = [
+  { id: "super_admin", role: "super_admin", label: "1. Super Admin" },
+  { id: "admin", role: "admin", label: "2. Admin" },
+  { id: "store", role: "store", label: "3. Store" },
+  { id: "rider", role: "rider", label: "4. Rider" },
+  { id: "customer", role: "customer", label: "5. Customer" },
 ];
 
+const ROLE_LABELS: Record<UserRole, string> = {
+  super_admin: "Super Admin",
+  admin: "Admin",
+  store: "Store",
+  rider: "Rider",
+  customer: "Customer",
+};
+
 function ChoyFoodShell() {
-  const { authUser, profile, dishes, toasts, dismissToast, loginWithGoogle, logout, pushToast, loginAsDemoUser } =
+  const { authUser, profile, dishes, toasts, dismissToast, openAuthModal, logout, pushToast } =
     useChoyFood();
 
   const [view, setView] = useState<AppView>("customer");
+  const [customerTab, setCustomerTab] = useState<CustomerTab>("explore");
+  const [customerTabSeq, setCustomerTabSeq] = useState(0);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [appliedRewardPromo, setAppliedRewardPromo] = useState<{ code: string; seq: number }>({
+    code: "",
+    seq: 0,
+  });
   const [isKycOpen, setIsKycOpen] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<any>(null);
 
@@ -110,6 +129,19 @@ function ChoyFoodShell() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const navigateCustomerTab = (tab: CustomerTab) => {
+    setView("customer");
+    setCustomerTab(tab);
+    setCustomerTabSeq((prev) => prev + 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handleApplyRewardCode = (code: string) => {
+    setAppliedRewardPromo((prev) => ({ code, seq: prev.seq + 1 }));
+    setIsCartOpen(true);
+    pushToast("Voucher Applied", `${code} loaded into your Food Saver Bag.`, "success");
+  };
+
   const isPublicPage =
     view === "landing" ||
     view === "blog" ||
@@ -117,17 +149,33 @@ function ChoyFoodShell() {
     view === "contact" ||
     view === "privacy";
 
+  const activeDashboardRole: UserRole =
+    ROLE_TABS.find((t) => t.id === view)?.role || "customer";
+
+  const signedInRoleLabel = profile?.role ? ROLE_LABELS[profile.role] : "Account";
+
   return (
     <div className="min-h-screen flex flex-col bg-[#FAF8F5] text-[#1C1917]">
-      {/* Strict 3-Zone Top Bar Contract: [Brand Wordmark] — [5 Single-Line Nav Links] — [1 Primary Action] */}
+      {/* Strict 3-Zone Top Bar Contract: [Sidebar Button + Brand Wordmark] — [5 Single-Line Nav Links] — [Primary Action] */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-8">
-          <button
-            onClick={() => navigate("landing")}
-            className="font-display text-xl font-extrabold tracking-tight text-[#D12D11] whitespace-nowrap shrink-0"
-          >
-            Choy<span className="text-[#E08E00]">Food</span>
-          </button>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4 sm:gap-8">
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open navigation sidebar"
+              className="min-h-[40px] min-w-[40px] flex items-center justify-center rounded-lg border border-stone-200 bg-stone-50 hover:bg-stone-100 text-[#1C1917] transition-colors shrink-0"
+              title="Open Menu"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => navigate("landing")}
+              className="font-display text-xl font-extrabold tracking-tight text-[#D12D11] whitespace-nowrap shrink-0"
+            >
+              CHOY <span className="text-[#E08E00]">DELIVERY</span>
+            </button>
+          </div>
 
           <nav className="hidden md:flex items-center gap-7 text-sm font-medium text-stone-600">
             <button
@@ -185,36 +233,30 @@ function ChoyFoodShell() {
             {authUser ? (
               <button
                 onClick={logout}
-                className="inline-flex items-center gap-2 bg-stone-100 hover:bg-stone-200 text-[#1C1917] text-xs font-semibold px-4 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
-                title={authUser.email || "Signed in account"}
+                className="inline-flex items-center gap-2 bg-stone-100 hover:bg-stone-200 text-[#1C1917] text-xs font-semibold px-3.5 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
+                title={`Signed in as ${signedInRoleLabel} (${authUser.email || authUser.uid}) — click to sign out`}
               >
-                <span className="max-w-[120px] truncate">
+                <span className="text-[10px] font-mono uppercase bg-stone-200 text-stone-800 px-1.5 py-0.5 rounded">
+                  {signedInRoleLabel}
+                </span>
+                <span className="max-w-[110px] truncate">
                   {profile?.displayName || authUser.displayName || "Account"}
                 </span>
                 <LogOut className="w-3.5 h-3.5 text-stone-500" />
               </button>
             ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={loginWithGoogle}
-                  className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
-                >
-                  Sign In
-                </button>
-                <button
-                  onClick={() => loginAsDemoUser("admin")}
-                  className="bg-stone-900 hover:bg-stone-800 text-amber-300 text-xs font-semibold px-3 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
-                  title="Instant Demo Super Admin Access (Bypasses Firebase 2FA)"
-                >
-                  ⚡ Demo Admin
-                </button>
-              </div>
+              <button
+                onClick={() => openAuthModal(activeDashboardRole)}
+                className="bg-[#D12D11] hover:bg-[#A61F09] text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors whitespace-nowrap shrink-0"
+              >
+                Sign In
+              </button>
             )}
           </div>
         </div>
       </header>
 
-      {/* Workspace Role Toolbar (Below Header) */}
+      {/* Workspace 5-Dashboard Milestone Toolbar (Below Header) */}
       <div className="bg-white border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-1 p-1 bg-stone-100 rounded-lg overflow-x-auto scrollbar-none">
@@ -226,8 +268,14 @@ function ChoyFoodShell() {
                   onClick={() => navigate(tab.id)}
                   className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap shrink-0 transition-colors ${
                     active
-                      ? tab.id === "admin"
-                        ? "bg-[#0B1120] text-white"
+                      ? tab.id === "super_admin"
+                        ? "bg-[#0B1120] text-amber-300 shadow-xs"
+                        : tab.id === "admin"
+                        ? "bg-slate-900 text-sky-300 shadow-xs"
+                        : tab.id === "store"
+                        ? "bg-[#A61F09] text-white shadow-xs"
+                        : tab.id === "rider"
+                        ? "bg-[#1F7A4C] text-white shadow-xs"
                         : "bg-white text-[#1C1917] shadow-xs"
                       : "text-stone-600 hover:text-[#1C1917]"
                   }`}
@@ -238,7 +286,15 @@ function ChoyFoodShell() {
             })}
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => openAuthModal(activeDashboardRole)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-700 hover:text-[#D12D11] px-3 py-1.5 rounded-lg border border-stone-200 bg-white transition-colors whitespace-nowrap"
+            >
+              <LogIn className="w-3.5 h-3.5 text-[#D12D11]" />
+              <span>{authUser ? "Switch Account" : "Role Login"}</span>
+            </button>
+
             <button
               onClick={() => setIsKycOpen(true)}
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-stone-700 hover:text-[#D12D11] px-3 py-1.5 rounded-lg border border-stone-200 bg-white transition-colors whitespace-nowrap"
@@ -296,23 +352,28 @@ function ChoyFoodShell() {
             onOpenKyc={() => setIsKycOpen(true)}
           />
         )}
+        {view === "super_admin" && <AdminDashboard />}
+        {view === "admin" && <AdminOpsDashboard />}
+        {view === "store" && <StoreDashboard />}
+        {view === "rider" && <RiderDashboard />}
         {view === "customer" && (
           <CustomerDashboard
             onAddToCart={handleAddToCart}
             onReorderOrder={handleReorderOrder}
             onOpenKyc={() => setIsKycOpen(true)}
+            onApplyRewardCode={handleApplyRewardCode}
+            requestedTab={customerTab}
+            tabRequestSeq={customerTabSeq}
+            onTabChange={setCustomerTab}
           />
         )}
-        {view === "rider" && <RiderDashboard />}
-        {view === "store" && <StoreDashboard />}
-        {view === "admin" && <AdminDashboard />}
       </main>
 
       {/* Clean Editorial Footer */}
       <footer className="bg-[#1C1917] text-stone-400 text-xs py-8 border-t border-stone-800 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row justify-between items-center gap-4">
           <div>
-            <span className="font-display font-bold text-white text-sm">ChoyFood</span>
+            <span className="font-display font-bold text-white text-sm">CHOY DELIVERY</span>
             <p className="text-stone-400 mt-0.5">
               Local Filipino food delivery connecting neighborhood kitchens, riders, and diners.
             </p>
@@ -334,7 +395,19 @@ function ChoyFoodShell() {
         </div>
       </footer>
 
+      {/* Slide-Out Forest Green Sidebar Drawer */}
+      <SidebarDrawer
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        currentView={view}
+        activeCustomerTab={customerTab}
+        onNavigateView={navigate}
+        onNavigateCustomerTab={navigateCustomerTab}
+        onOpenKyc={() => setIsKycOpen(true)}
+      />
+
       {/* Modals & Slide-Over Drawers */}
+      <AuthModal onAuthenticated={(role) => navigate(role)} />
       <KycModal isOpen={isKycOpen} onClose={() => setIsKycOpen(false)} />
       <CartDrawer
         isOpen={isCartOpen}
@@ -342,6 +415,8 @@ function ChoyFoodShell() {
         cart={cart}
         onChangeQty={handleChangeCartQty}
         onClearCart={() => setCart([])}
+        externalPromoCode={appliedRewardPromo.code}
+        externalPromoSeq={appliedRewardPromo.seq}
       />
       <AskChoyDrawer />
 
@@ -381,9 +456,9 @@ function ChoyFoodShell() {
 export default function App() {
   return (
     <ErrorBoundary>
-      <FirebaseProvider>
+      <SupabaseProvider>
         <ChoyFoodShell />
-      </FirebaseProvider>
+      </SupabaseProvider>
     </ErrorBoundary>
   );
 }

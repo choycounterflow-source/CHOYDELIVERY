@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useChoyFood } from "../context/FirebaseContext";
+import { useChoyFood } from "../context/SupabaseContext";
+import { evaluateMathExpression } from "../lib/fees";
 import { Loader2, MessageSquare, Send, X } from "lucide-react";
 
 interface ChatTurn {
@@ -12,12 +13,11 @@ const QUICK_PROMPTS = [
   "Best combo under ₱250?",
   "How does Choy Pro free delivery work?",
   "How are my KYC IDs protected?",
-  "What are the rider requirements?",
+  "220 * 2 + 35",
 ];
 
 export const AskChoyDrawer: React.FC = () => {
-  const { dishes } = useChoyFood();
-  const [isOpen, setIsOpen] = useState(false);
+  const { dishes, cmsSettings, isAskChoyOpen, openAskChoy, closeAskChoy } = useChoyFood();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ChatTurn[]>([
@@ -25,7 +25,7 @@ export const AskChoyDrawer: React.FC = () => {
       id: "welcome",
       role: "assistant",
       content:
-        "Kumusta! I am Ask Choy AI. Ask me for Filipino meal pairings, CHOY25 promo tips, Choy Pro free delivery, or rider & store onboarding details.",
+        "Kumusta! I am Ask Choy AI. Ask me for Filipino meal pairings, CHOY25 promo tips, Choy Pro free delivery, rider & store onboarding details, or quick bill math!",
     },
   ]);
 
@@ -33,7 +33,7 @@ export const AskChoyDrawer: React.FC = () => {
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, isOpen]);
+  }, [messages, loading, isAskChoyOpen]);
 
   const sendMessage = async (textOverride?: string) => {
     const text = (textOverride ?? input).trim();
@@ -48,6 +48,23 @@ export const AskChoyDrawer: React.FC = () => {
     const nextThread = [...messages, userTurn];
     setMessages(nextThread);
     setInput("");
+
+    // Instant safe local arithmetic evaluation when pure math is asked
+    const mathValue = evaluateMathExpression(text);
+    if (mathValue !== null) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `math-${Date.now()}`,
+          role: "assistant",
+          content: `Calculated result: ${mathValue.toLocaleString("en-PH", {
+            maximumFractionDigits: 4,
+          })}`,
+        },
+      ]);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -62,6 +79,7 @@ export const AskChoyDrawer: React.FC = () => {
         body: JSON.stringify({
           messages: nextThread.map((m) => ({ role: m.role, content: m.content })),
           menuContext,
+          knowledgeBase: cmsSettings.aiKnowledgeBase,
         }),
       });
 
@@ -97,23 +115,23 @@ export const AskChoyDrawer: React.FC = () => {
   return (
     <>
       <button
-        onClick={() => setIsOpen(true)}
+        onClick={openAskChoy}
         className="fixed bottom-5 right-5 z-40 inline-flex items-center gap-2 bg-[#1C1917] hover:bg-[#D12D11] text-white text-xs font-semibold px-4 py-3 rounded-full shadow-lg transition-colors whitespace-nowrap"
       >
         <MessageSquare className="w-4 h-4" />
         <span>Ask Choy AI</span>
       </button>
 
-      {isOpen && (
+      {isAskChoyOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/45 backdrop-blur-xs">
           <aside className="w-full max-w-md bg-white h-full flex flex-col justify-between shadow-2xl border-l border-stone-200">
             <div className="px-6 py-4 border-b border-stone-200 flex items-center justify-between">
               <div>
                 <h2 className="font-display text-base font-bold text-[#1C1917]">Ask Choy AI</h2>
-                <p className="text-xs text-stone-500">Local menu &amp; platform assistant</p>
+                <p className="text-xs text-stone-500">Local menu, platform knowledge &amp; bill math</p>
               </div>
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={closeAskChoy}
                 aria-label="Close Ask Choy AI"
                 className="p-1.5 text-stone-400 hover:text-stone-700"
               >
@@ -166,7 +184,7 @@ export const AskChoyDrawer: React.FC = () => {
                 type="text"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask about combos, promos, or delivery..."
+                placeholder="Ask about combos, promos, or calculate e.g. 220*2..."
                 className="flex-1 text-sm px-3.5 py-2.5 rounded-lg border border-stone-300 focus:outline-none focus:ring-2 focus:ring-[#D12D11]/30 focus:border-[#D12D11]"
               />
               <button
